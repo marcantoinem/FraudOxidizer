@@ -6,7 +6,12 @@ pub mod transaction;
 pub mod transaction_id;
 pub mod transactions;
 
-use std::num::{ParseFloatError, ParseIntError};
+use std::{
+    net::IpAddr,
+    num::{ParseFloatError, ParseIntError},
+};
+
+use chrono::NaiveDateTime;
 
 use crate::ParseCsvError;
 
@@ -52,5 +57,28 @@ pub(crate) fn optional_string(value: &str) -> Option<String> {
         None
     } else {
         Some(value.to_string())
+    }
+}
+
+pub(crate) fn parse_timestamp(value: &str) -> Result<chrono::DateTime<chrono::Utc>, ParseCsvError> {
+    NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
+        .map(|timestamp| timestamp.and_utc())
+        .map_err(|_| ParseCsvError::InvalidDateTime {
+            field: "timestamp",
+            value: value.to_string(),
+        })
+}
+
+pub(crate) fn optional_ip_addr(value: &str) -> Result<Option<IpAddr>, ParseCsvError> {
+    if value.is_empty() {
+        Ok(None)
+    } else {
+        value
+            .parse::<IpAddr>()
+            .map(Some)
+            .map_err(|_| ParseCsvError::InvalidIpAddress {
+                field: "ip_address",
+                value: value.to_string(),
+            })
     }
 }

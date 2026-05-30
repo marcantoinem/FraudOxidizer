@@ -1,6 +1,8 @@
 use std::{fs, path::Path};
 
-use super::{optional_string, parse_amount, transaction::Transaction};
+use super::{
+    optional_ip_addr, optional_string, parse_amount, parse_timestamp, transaction::Transaction,
+};
 use crate::ParseCsvError;
 
 #[derive(Debug, Default)]
@@ -33,7 +35,7 @@ impl Transactions {
 
             items.push(Transaction {
                 transaction_id: columns[0].parse()?,
-                timestamp: columns[1].to_string(),
+                timestamp: parse_timestamp(columns[1])?,
                 card_id: columns[2].parse()?,
                 amount: parse_amount(columns[3])?,
                 merchant_name: columns[4].to_string(),
@@ -42,7 +44,7 @@ impl Transactions {
                 cardholder_country: columns[7].parse()?,
                 merchant_country: columns[8].parse()?,
                 device_id: optional_string(columns[9]),
-                ip_address: optional_string(columns[10]),
+                ip_address: optional_ip_addr(columns[10])?,
             });
         }
 

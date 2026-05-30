@@ -22,6 +22,10 @@ pub enum ParseCsvError {
     InvalidNumber { field: &'static str, value: String },
     #[error("field {field} must contain a valid float, got {value}")]
     InvalidFloat { field: &'static str, value: String },
+    #[error("field {field} must contain a valid datetime, got {value}")]
+    InvalidDateTime { field: &'static str, value: String },
+    #[error("field {field} must contain a valid IP address, got {value}")]
+    InvalidIpAddress { field: &'static str, value: String },
     #[error("field {field} has unsupported value {value}")]
     InvalidEnumValue { field: &'static str, value: String },
 }

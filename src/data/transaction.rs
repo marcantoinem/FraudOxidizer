@@ -3,10 +3,13 @@ use super::{
     transaction_id::TransactionId,
 };
 
+use chrono::{DateTime, Utc};
+use std::net::IpAddr;
+
 #[derive(Debug)]
 pub struct Transaction {
     pub transaction_id: TransactionId,
-    pub timestamp: String,
+    pub timestamp: DateTime<Utc>,
     pub card_id: CardId,
     pub amount: f64,
     pub merchant_name: String,
@@ -15,5 +18,5 @@ pub struct Transaction {
     pub cardholder_country: Country,
     pub merchant_country: Country,
     pub device_id: Option<String>,
-    pub ip_address: Option<String>,
+    pub ip_address: Option<IpAddr>,
 }
