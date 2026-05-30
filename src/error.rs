@@ -3,7 +3,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ParseCsvError {
     #[error("failed to read csv: {0}")]
-    Io(std::io::Error),
+    Io(#[from] std::io::Error),
     #[error("csv is missing a header row")]
     MissingHeader,
     #[error("line {line} has {found} columns, expected {expected}")]
@@ -24,10 +24,4 @@ pub enum ParseCsvError {
     InvalidFloat { field: &'static str, value: String },
     #[error("field {field} has unsupported value {value}")]
     InvalidEnumValue { field: &'static str, value: String },
-}
-
-impl From<std::io::Error> for ParseCsvError {
-    fn from(error: std::io::Error) -> Self {
-        ParseCsvError::Io(error)
-    }
 }

@@ -4,14 +4,14 @@ use crate::ParseCsvError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Country {
-    Ca,
-    Us,
-    Fr,
-    Gb,
-    De,
-    Cn,
-    Se,
-    Mx,
+    Canada,
+    UnitedStates,
+    France,
+    UnitedKingdom,
+    Germany,
+    China,
+    Sweden,
+    Mexico,
 }
 
 impl FromStr for Country {
@@ -19,14 +19,14 @@ impl FromStr for Country {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let country = match value {
-            "CA" => Country::Ca,
-            "US" => Country::Us,
-            "FR" => Country::Fr,
-            "GB" => Country::Gb,
-            "DE" => Country::De,
-            "CN" => Country::Cn,
-            "SE" => Country::Se,
-            "MX" => Country::Mx,
+            "CA" => Country::Canada,
+            "US" => Country::UnitedStates,
+            "FR" => Country::France,
+            "GB" => Country::UnitedKingdom,
+            "DE" => Country::Germany,
+            "CN" => Country::China,
+            "SE" => Country::Sweden,
+            "MX" => Country::Mexico,
             _ => {
                 return Err(ParseCsvError::InvalidEnumValue {
                     field: "country",
