@@ -6,6 +6,9 @@ pub mod transaction;
 pub mod transaction_id;
 pub mod transactions;
 
+#[cfg(test)]
+mod tests;
+
 use std::{
     net::IpAddr,
     num::{ParseFloatError, ParseIntError},
