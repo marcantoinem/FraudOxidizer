@@ -278,7 +278,7 @@ fn transactions_parse_csv_accepts_new_country_codes() {
 
 #[test]
 fn transactions_parse_csv_accepts_project_csv_file() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("transactions.csv");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../transactions.csv");
 
     let transactions =
         Transactions::parse_csv(&path).expect("expected repository transactions.csv to be valid");

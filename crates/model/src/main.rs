@@ -1,4 +1,4 @@
-use valsoft_fraud_detector::data::transactions::Transactions;
+use model::data::transactions::Transactions;
 
 fn main() -> anyhow::Result<()> {
     let transactions = Transactions::parse_csv("transactions.csv")?;

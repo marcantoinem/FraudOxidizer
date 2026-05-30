@@ -1,10 +1,33 @@
-[package]
-name = "valsoft-fraud-detector"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+# Try
+# require version 2 to avoid "feature" additiveness for dev-dependencies
+# https://doc.rust-lang.org/cargo/reference/resolver.html#feature-resolver-version-2
+resolver = "2"
 
-[dependencies]
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+rust-version = "1.92"
+version = "0.0.1"
+
+[workspace.lints.rust]
+warnings = "warn"
+
+[workspace.lints.clippy]
+doc_markdown = "warn"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "warn"
+invalid_html_tags = "warn"
+
+[workspace.dependencies]
 anyhow = "1.0.102"
 chrono = "0.4"
 my_country = { version = "0.1.17", features = ["all_countries"] }
 thiserror = "2.0"
+
+[profile.dev.build-override]
+opt-level = 3

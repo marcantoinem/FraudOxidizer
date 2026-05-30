@@ -213,6 +213,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
+name = "model"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "my_country",
+ "thiserror",
+]
+
+[[package]]
 name = "my_country"
 version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -399,16 +409,6 @@ name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
-
-[[package]]
-name = "valsoft-fraud-detector"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "my_country",
- "thiserror",
-]
 
 [[package]]
 name = "walkdir"

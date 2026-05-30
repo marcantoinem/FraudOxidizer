@@ -1,0 +1,12 @@
+[package]
+name = "model"
+edition.workspace = true
+license.workspace = true
+readme.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+my_country = { workspace = true }
+thiserror = { workspace = true }
