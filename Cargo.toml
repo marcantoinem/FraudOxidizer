@@ -29,5 +29,9 @@ chrono = "0.4"
 my_country = { version = "0.1.17", features = ["all_countries"] }
 thiserror = "2.0"
 
-[profile.dev.build-override]
+[profile.release]
+opt-level = 3
+
+# Optimize all dependencies even in debug builds:
+[profile.dev.package."*"]
 opt-level = 3
