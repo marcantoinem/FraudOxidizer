@@ -1,4 +1,5 @@
 use crate::csv_loader::CsvState;
+use crate::transactions_table;
 
 pub struct TemplateApp {
     csv: CsvState,
@@ -61,19 +62,7 @@ impl eframe::App for TemplateApp {
                 ui.separator();
                 ui.label(format!("Loaded {} transactions.", transactions.items.len()));
                 ui.separator();
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    for t in &transactions.items {
-                        ui.label(format!(
-                            "[{:?}] {} | {:?} | {:.2} | {} | {:?}",
-                            t.transaction_id,
-                            t.timestamp.format("%Y-%m-%d %H:%M:%S"),
-                            t.card_id,
-                            t.amount,
-                            t.merchant_name,
-                            t.channel,
-                        ));
-                    }
-                });
+                transactions_table::show_transactions_table(ui, &transactions.items);
             }
         });
 

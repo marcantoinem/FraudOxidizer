@@ -13,6 +13,7 @@ targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 [dependencies]
 egui = "0.34.1"
 eframe = { version = "0.34.1", features = ["persistence"] }
+egui_table = "0.8.0"
 log = "0.4.27"
 model = { path = "../model" }
 rfd = "0.15"

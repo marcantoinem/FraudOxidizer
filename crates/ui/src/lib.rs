@@ -2,4 +2,5 @@
 
 mod app;
 mod csv_loader;
+mod transactions_table;
 pub use app::TemplateApp;
