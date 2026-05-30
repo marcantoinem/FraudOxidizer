@@ -1,17 +1,13 @@
-use model::data::transactions::Transactions;
+use crate::csv_loader::CsvState;
 
 pub struct TemplateApp {
-    transactions: Option<Transactions>,
-    picked_path: Option<String>,
-    parse_error: Option<String>,
+    csv: CsvState,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
         Self {
-            transactions: None,
-            picked_path: None,
-            parse_error: None,
+            csv: CsvState::default(),
         }
     }
 }
@@ -20,26 +16,6 @@ impl TemplateApp {
     /// Called once before the first frame.
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         Default::default()
-    }
-
-    fn load_csv_from_path(&mut self, path: &std::path::Path) {
-        self.picked_path = Some(path.display().to_string());
-        match std::fs::read_to_string(path) {
-            Ok(content) => match Transactions::parse_csv_content(&content) {
-                Ok(transactions) => {
-                    self.transactions = Some(transactions);
-                    self.parse_error = None;
-                }
-                Err(e) => {
-                    self.transactions = None;
-                    self.parse_error = Some(e.to_string());
-                }
-            },
-            Err(e) => {
-                self.transactions = None;
-                self.parse_error = Some(e.to_string());
-            }
-        }
     }
 }
 
@@ -66,28 +42,22 @@ impl eframe::App for TemplateApp {
 
             ui.label("Drag-and-drop a CSV file onto the window, or use the button below.");
 
-            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Open CSV file…").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("CSV", &["csv"])
-                    .pick_file()
-                {
-                    self.load_csv_from_path(&path);
-                }
+                self.csv.open_csv_dialog(ui.ctx());
             }
 
-            if let Some(picked_path) = &self.picked_path {
+            if let Some(picked_path) = &self.csv.picked_name {
                 ui.horizontal(|ui| {
                     ui.label("Loaded file:");
                     ui.monospace(picked_path);
                 });
             }
 
-            if let Some(err) = &self.parse_error {
+            if let Some(err) = &self.csv.parse_error {
                 ui.colored_label(egui::Color32::RED, format!("Error: {err}"));
             }
 
-            if let Some(transactions) = &self.transactions {
+            if let Some(transactions) = &self.csv.transactions {
                 ui.separator();
                 ui.label(format!("Loaded {} transactions.", transactions.items.len()));
                 ui.separator();
@@ -109,13 +79,15 @@ impl eframe::App for TemplateApp {
 
         preview_files_being_dropped(ui.ctx());
 
+        // Poll for async file dialog result (web):
+        #[cfg(target_arch = "wasm32")]
+        self.csv.poll_web_dialog_result();
+
         // Collect dropped files:
         let dropped: Vec<egui::DroppedFile> = ui.input(|i| i.raw.dropped_files.clone());
         for file in dropped {
-            if let Some(path) = file.path {
-                self.load_csv_from_path(&path);
-                break;
-            }
+            self.csv.load_csv_from_dropped_file(file);
+            break;
         }
     }
 }
