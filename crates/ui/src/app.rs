@@ -1,56 +1,53 @@
-/// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(serde::Deserialize, serde::Serialize)]
-#[serde(default)] // if we add new fields, give them default values when deserializing old state
-pub struct TemplateApp {
-    // Example stuff:
-    label: String,
+use model::data::transactions::Transactions;
 
-    #[serde(skip)] // This how you opt-out of serialization of a field
-    value: f32,
+pub struct TemplateApp {
+    transactions: Option<Transactions>,
+    picked_path: Option<String>,
+    parse_error: Option<String>,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
         Self {
-            // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
+            transactions: None,
+            picked_path: None,
+            parse_error: None,
         }
     }
 }
 
 impl TemplateApp {
     /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // This is also where you can customize the look and feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
+    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        Default::default()
+    }
 
-        // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
-        if let Some(storage) = cc.storage {
-            eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
-        } else {
-            Default::default()
+    fn load_csv_from_path(&mut self, path: &std::path::Path) {
+        self.picked_path = Some(path.display().to_string());
+        match std::fs::read_to_string(path) {
+            Ok(content) => match Transactions::parse_csv_content(&content) {
+                Ok(transactions) => {
+                    self.transactions = Some(transactions);
+                    self.parse_error = None;
+                }
+                Err(e) => {
+                    self.transactions = None;
+                    self.parse_error = Some(e.to_string());
+                }
+            },
+            Err(e) => {
+                self.transactions = None;
+                self.parse_error = Some(e.to_string());
+            }
         }
     }
 }
 
 impl eframe::App for TemplateApp {
-    /// Called by the framework to save state before shutdown.
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, self);
-    }
-
     /// Called each time the UI needs repainting, which may be many times per second.
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
-
         egui::Panel::top("top_panel").show_inside(ui, |ui| {
-            // The top panel is often a good place for a menu bar:
-
             egui::MenuBar::new().ui(ui, |ui| {
-                // NOTE: no File->Quit on web pages!
                 let is_web = cfg!(target_arch = "wasm32");
                 if !is_web {
                     ui.menu_button("File", |ui| {
@@ -60,50 +57,99 @@ impl eframe::App for TemplateApp {
                     });
                     ui.add_space(16.0);
                 }
-
                 egui::widgets::global_theme_preference_buttons(ui);
             });
         });
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("eframe template");
+            ui.heading("Fraud Detector");
 
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut self.label);
-            });
+            ui.label("Drag-and-drop a CSV file onto the window, or use the button below.");
 
-            ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                self.value += 1.0;
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui.button("Open CSV file…").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("CSV", &["csv"])
+                    .pick_file()
+                {
+                    self.load_csv_from_path(&path);
+                }
             }
 
-            ui.separator();
+            if let Some(picked_path) = &self.picked_path {
+                ui.horizontal(|ui| {
+                    ui.label("Loaded file:");
+                    ui.monospace(picked_path);
+                });
+            }
 
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/eframe_template/blob/main/",
-                "Source code."
-            ));
+            if let Some(err) = &self.parse_error {
+                ui.colored_label(egui::Color32::RED, format!("Error: {err}"));
+            }
 
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                powered_by_egui_and_eframe(ui);
-                egui::warn_if_debug_build(ui);
-            });
+            if let Some(transactions) = &self.transactions {
+                ui.separator();
+                ui.label(format!("Loaded {} transactions.", transactions.items.len()));
+                ui.separator();
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for t in &transactions.items {
+                        ui.label(format!(
+                            "[{:?}] {} | {:?} | {:.2} | {} | {:?}",
+                            t.transaction_id,
+                            t.timestamp.format("%Y-%m-%d %H:%M:%S"),
+                            t.card_id,
+                            t.amount,
+                            t.merchant_name,
+                            t.channel,
+                        ));
+                    }
+                });
+            }
         });
+
+        preview_files_being_dropped(ui.ctx());
+
+        // Collect dropped files:
+        let dropped: Vec<egui::DroppedFile> = ui.input(|i| i.raw.dropped_files.clone());
+        for file in dropped {
+            if let Some(path) = file.path {
+                self.load_csv_from_path(&path);
+                break;
+            }
+        }
     }
 }
 
-fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label("Powered by ");
-        ui.hyperlink_to("egui", "https://github.com/emilk/egui");
-        ui.label(" and ");
-        ui.hyperlink_to(
-            "eframe",
-            "https://github.com/emilk/egui/tree/master/crates/eframe",
+fn preview_files_being_dropped(ctx: &egui::Context) {
+    use egui::{Align2, Color32, Id, LayerId, Order, TextStyle};
+    use std::fmt::Write as _;
+
+    if !ctx.input(|i| i.raw.hovered_files.is_empty()) {
+        let text = ctx.input(|i| {
+            let mut text = "Drop CSV file:\n".to_owned();
+            for file in &i.raw.hovered_files {
+                if let Some(path) = &file.path {
+                    write!(text, "\n{}", path.display()).ok();
+                } else if file.mime.is_empty() {
+                    text += "\n???";
+                } else {
+                    write!(text, "\n{}", file.mime).ok();
+                }
+            }
+            text
+        });
+
+        let painter =
+            ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("file_drop_target")));
+
+        let content_rect = ctx.content_rect();
+        painter.rect_filled(content_rect, 0.0, Color32::from_black_alpha(192));
+        painter.text(
+            content_rect.center(),
+            Align2::CENTER_CENTER,
+            text,
+            TextStyle::Heading.resolve(&ctx.global_style()),
+            Color32::WHITE,
         );
-        ui.label(".");
-    });
+    }
 }

@@ -13,6 +13,10 @@ pub struct Transactions {
 impl Transactions {
     pub fn parse_csv<P: AsRef<Path>>(path: P) -> Result<Self, ParseCsvError> {
         let content = fs::read_to_string(path)?;
+        Self::parse_csv_content(&content)
+    }
+
+    pub fn parse_csv_content(content: &str) -> Result<Self, ParseCsvError> {
         let mut lines = content.lines();
 
         let _header = lines.next().ok_or(ParseCsvError::MissingHeader)?;
