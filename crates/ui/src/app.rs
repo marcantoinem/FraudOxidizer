@@ -116,9 +116,8 @@ impl eframe::App for FraudOxidizerApp {
 
         // Collect dropped files:
         let dropped: Vec<egui::DroppedFile> = ui.input(|i| i.raw.dropped_files.clone());
-        for file in dropped {
+        if let Some(file) = dropped.into_iter().next() {
             self.csv.load_csv_from_dropped_file(file);
-            break;
         }
     }
 }

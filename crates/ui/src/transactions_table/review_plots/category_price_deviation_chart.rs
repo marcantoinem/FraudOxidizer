@@ -1,3 +1,5 @@
+use super::{time_axis_formatter, time_x_grid};
+
 pub fn category_price_deviation_slot(
     category_label: String,
     category_all: Vec<[f64; 2]>,
@@ -24,9 +26,16 @@ pub fn category_price_deviation_slot(
         let limit_sigma = model::process::card_statistics::CATEGORY_PRICE_DEVIATION_MIN_Z_SCORE;
         let trigger_amount = average_amount + std_deviation * limit_sigma;
         let y_max = (max_amount.max(trigger_amount)) * 1.1;
+        let x_axes = vec![
+            egui_plot::AxisHints::new_x()
+                .label("time")
+                .formatter(time_axis_formatter),
+        ];
 
         egui_plot::Plot::new(format!("category_price_deviation_{category_label}"))
             .height(220.0)
+            .custom_x_axes(x_axes)
+            .x_grid_spacer(time_x_grid)
             .y_axis_label("amount ($)")
             .default_y_bounds(0.0, y_max)
             .show(ui, |plot_ui| {
