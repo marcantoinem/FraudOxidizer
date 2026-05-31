@@ -8,6 +8,9 @@ pub(super) enum ReviewCommand {
         before: HumanReviewStatus,
         after: HumanReviewStatus,
     },
+    BatchSetHumanReviewStatus {
+        updates: Vec<(usize, HumanReviewStatus, HumanReviewStatus)>,
+    },
 }
 
 impl ReviewCommand {
@@ -20,6 +23,13 @@ impl ReviewCommand {
             } => {
                 if let Some(row) = rows.get_mut(*transaction_index) {
                     row.human_review_status = *after;
+                }
+            }
+            Self::BatchSetHumanReviewStatus { updates } => {
+                for (transaction_index, _, after) in updates {
+                    if let Some(row) = rows.get_mut(*transaction_index) {
+                        row.human_review_status = *after;
+                    }
                 }
             }
         }
@@ -36,6 +46,13 @@ impl ReviewCommand {
                     row.human_review_status = *before;
                 }
             }
+            Self::BatchSetHumanReviewStatus { updates } => {
+                for (transaction_index, before, _) in updates {
+                    if let Some(row) = rows.get_mut(*transaction_index) {
+                        row.human_review_status = *before;
+                    }
+                }
+            }
         }
     }
 
@@ -44,6 +61,9 @@ impl ReviewCommand {
             Self::SetHumanReviewStatus {
                 transaction_index, ..
             } => *transaction_index,
+            Self::BatchSetHumanReviewStatus { updates } => {
+                updates.first().map(|(idx, _, _)| *idx).unwrap_or(0)
+            }
         }
     }
 }

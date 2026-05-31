@@ -5,6 +5,10 @@ use crate::data::{country::Country, transaction::Transaction, transactions::Tran
 pub const FRAUD_SCORE_THRESHOLD: f32 = 0.8;
 pub const FOREIGN_COUNTRY_WEIGHT: f32 = 0.8;
 pub const VACATION_FOREIGN_COUNTRY_WEIGHT: f32 = 0.4;
+pub const CARD_TESTING_BURST_WEIGHT: f32 = 0.9;
+pub const CARD_TESTING_BURST_MAX_AMOUNT: f64 = 15.0;
+pub const CARD_TESTING_BURST_MIN_COUNT: usize = 3;
+pub const CARD_TESTING_BURST_MAX_GAP: Duration = Duration::minutes(5);
 pub const VACATION_GAP_THRESHOLD: Duration = Duration::hours(24);
 pub const VACATION_SPAN_THRESHOLD: Duration = Duration::hours(24);
 
@@ -20,6 +24,13 @@ pub enum FraudFactor {
         gap_after: Option<Duration>,
         likely_vacation: bool,
     },
+    CardTestingBurst {
+        transaction_count: usize,
+        burst_start: DateTime<Utc>,
+        burst_end: DateTime<Utc>,
+        max_amount: f64,
+        max_gap: Duration,
+    },
 }
 
 impl FraudFactor {
@@ -34,6 +45,7 @@ impl FraudFactor {
                     FOREIGN_COUNTRY_WEIGHT
                 }
             }
+            Self::CardTestingBurst { .. } => CARD_TESTING_BURST_WEIGHT,
         }
     }
 
@@ -61,6 +73,21 @@ impl FraudFactor {
                     trip_end,
                 )
             }
+            Self::CardTestingBurst {
+                transaction_count,
+                burst_start,
+                burst_end,
+                max_amount,
+                max_gap,
+            } => {
+                format!(
+                    "{transaction_count} rapid small online transactions (<= {:.2}) between {} and {} with max gap {}s",
+                    max_amount,
+                    burst_start,
+                    burst_end,
+                    max_gap.num_seconds()
+                )
+            }
         }
     }
 }
@@ -86,6 +113,7 @@ impl Transactions {
         }
 
         crate::process::passes::foreign_country_trip::apply(self);
+        crate::process::passes::card_testing_burst::apply(self);
     }
 }
 
@@ -126,6 +154,17 @@ mod tests {
             fraud_factors: Vec::new(),
             human_review_status: HumanReviewStatus::NotNeeded,
         }
+    }
+
+    fn tx_online(
+        card_id: u64,
+        timestamp: (i32, u32, u32, u32, u32, u32),
+        amount: f64,
+    ) -> Transaction {
+        let mut tx = tx(card_id, timestamp, CountryCode::CA);
+        tx.channel = Channel::Online;
+        tx.amount = amount;
+        tx
     }
 
     #[test]
@@ -215,5 +254,62 @@ mod tests {
             }
         ));
         assert!(!mx_tx.likely_fraud());
+    }
+
+    #[test]
+    fn marks_rapid_small_online_transactions_as_card_testing_burst() {
+        let mut transactions = Transactions {
+            items: vec![
+                tx_online(10, (2026, 5, 1, 10, 0, 0), 2.15),
+                tx_online(10, (2026, 5, 1, 10, 1, 20), 4.00),
+                tx_online(10, (2026, 5, 1, 10, 3, 10), 3.25),
+                tx_online(10, (2026, 5, 1, 11, 30, 0), 45.0),
+            ],
+        };
+
+        transactions.apply_fraud_factors();
+
+        let burst_count = transactions
+            .items
+            .iter()
+            .filter(|tx| {
+                tx.fraud_factors.iter().any(|factor| {
+                    matches!(
+                        factor,
+                        FraudFactor::CardTestingBurst {
+                            transaction_count: 3,
+                            ..
+                        }
+                    )
+                })
+            })
+            .count();
+
+        assert_eq!(burst_count, 3);
+        assert!(transactions.items[0].likely_fraud());
+        assert_eq!(
+            transactions.items[0].human_review_status,
+            HumanReviewStatus::NeedCheck
+        );
+    }
+
+    #[test]
+    fn does_not_mark_non_online_or_large_transactions_as_card_testing_burst() {
+        let mut transactions = Transactions {
+            items: vec![
+                tx_online(11, (2026, 5, 1, 10, 0, 0), 2.15),
+                tx_online(11, (2026, 5, 1, 10, 1, 20), 20.00),
+                tx(11, (2026, 5, 1, 10, 2, 10), CountryCode::CA),
+                tx_online(11, (2026, 5, 1, 10, 3, 10), 3.25),
+            ],
+        };
+
+        transactions.apply_fraud_factors();
+
+        assert!(transactions.items.iter().all(|tx| {
+            tx.fraud_factors
+                .iter()
+                .all(|factor| !matches!(factor, FraudFactor::CardTestingBurst { .. }))
+        }));
     }
 }

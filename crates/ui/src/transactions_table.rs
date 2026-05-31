@@ -518,6 +518,18 @@ fn short_reason(factor: &FraudFactor) -> String {
                 )
             }
         }
+        FraudFactor::CardTestingBurst {
+            transaction_count,
+            max_amount,
+            max_gap,
+            ..
+        } => {
+            format!(
+                "card testing burst: {transaction_count} tx <= {:.2}, max gap {}s",
+                max_amount,
+                max_gap.num_seconds()
+            )
+        }
     }
 }
 

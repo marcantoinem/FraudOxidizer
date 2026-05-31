@@ -1,5 +1,6 @@
 use model::data::human_review_status::HumanReviewStatus;
 use model::data::transaction::Transaction;
+use model::process::card_statistics::FraudFactor;
 
 use super::icons::{ActionIcon, icon_button};
 use super::review_command::ReviewCommand;
@@ -44,6 +45,8 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
     let fraud_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::F);
     let undo_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Z);
     let redo_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Y);
+    let bulk_approve_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::A);
+    let bulk_refuse_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::R);
 
     let previous_triggered = ui
         .ctx()
@@ -55,6 +58,9 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
     let fraud_triggered = ui.ctx().input_mut(|i| i.consume_shortcut(&fraud_shortcut));
     let undo_triggered = ui.ctx().input_mut(|i| i.consume_shortcut(&undo_shortcut));
     let redo_triggered = ui.ctx().input_mut(|i| i.consume_shortcut(&redo_shortcut));
+
+    // Bulk shortcuts are consumed only when a burst series is active (checked after cursor resolution)
+    // We defer them below after computing burst_series_indices.
 
     if previous_triggered {
         cursor = if cursor == 0 {
@@ -90,8 +96,49 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
     }
 
     let row_index = flagged_indices[cursor];
+    let current_card_id = rows[row_index].card_id;
+    let current_burst_range = rows[row_index].fraud_factors.iter().find_map(|f| {
+        if let FraudFactor::CardTestingBurst {
+            burst_start,
+            burst_end,
+            ..
+        } = f
+        {
+            Some((*burst_start, *burst_end))
+        } else {
+            None
+        }
+    });
+    let burst_series_indices: Vec<usize> = if let Some((burst_start, burst_end)) =
+        current_burst_range
+    {
+        flagged_indices
+                .iter()
+                .copied()
+                .filter(|&idx| {
+                    let r = &rows[idx];
+                    r.card_id == current_card_id
+                        && r.fraud_factors.iter().any(|f| {
+                            matches!(f, FraudFactor::CardTestingBurst { burst_start: s, burst_end: e, .. } if *s == burst_start && *e == burst_end)
+                        })
+                })
+                .collect()
+    } else {
+        vec![]
+    };
+
+    let bulk_approve_triggered = !burst_series_indices.is_empty()
+        && ui
+            .ctx()
+            .input_mut(|i| i.consume_shortcut(&bulk_approve_shortcut));
+    let bulk_refuse_triggered = !burst_series_indices.is_empty()
+        && ui
+            .ctx()
+            .input_mut(|i| i.consume_shortcut(&bulk_refuse_shortcut));
+
     let row = &rows[row_index];
     let mut requested_status: Option<HumanReviewStatus> = None;
+    let mut requested_bulk_status: Option<HumanReviewStatus> = None;
     let mut advance_after_action = false;
 
     ui.horizontal(|ui| {
@@ -176,6 +223,21 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
                         requested_status = Some(HumanReviewStatus::TruePositive);
                         advance_after_action = true;
                     }
+
+                    if !burst_series_indices.is_empty() {
+                        ui.separator();
+                        let bulk_approve_clicked =
+                            icon_button(ui, "Approve burst", ActionIcon::Approve, true).clicked();
+                        if bulk_approve_clicked || bulk_approve_triggered {
+                            requested_bulk_status = Some(HumanReviewStatus::FalsePositive);
+                        }
+
+                        let bulk_refuse_clicked =
+                            icon_button(ui, "Mark burst fraud", ActionIcon::Fraud, true).clicked();
+                        if bulk_refuse_clicked || bulk_refuse_triggered {
+                            requested_bulk_status = Some(HumanReviewStatus::TruePositive);
+                        }
+                    }
                 });
             });
 
@@ -184,6 +246,12 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
                 shortcut_legend_item(ui, &redo_shortcut, "redo");
                 ui.add_space(10.0);
                 shortcut_legend_item(ui, &undo_shortcut, "undo");
+                if !burst_series_indices.is_empty() {
+                    ui.add_space(10.0);
+                    shortcut_legend_item(ui, &bulk_refuse_shortcut, "mark burst fraud");
+                    ui.add_space(10.0);
+                    shortcut_legend_item(ui, &bulk_approve_shortcut, "approve burst");
+                }
                 ui.add_space(10.0);
                 shortcut_legend_item(ui, &fraud_shortcut, "mark fraud");
                 ui.add_space(10.0);
@@ -210,6 +278,30 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
             if advance_after_action && item_count > 1 {
                 cursor = (cursor + 1) % item_count;
             }
+        }
+    }
+
+    if let Some(after) = requested_bulk_status {
+        let updates: Vec<(usize, HumanReviewStatus, HumanReviewStatus)> = burst_series_indices
+            .iter()
+            .copied()
+            .filter_map(|transaction_index| {
+                let before = rows[transaction_index].human_review_status;
+                (before != after).then_some((transaction_index, before, after))
+            })
+            .collect();
+
+        if !updates.is_empty() {
+            let command = ReviewCommand::BatchSetHumanReviewStatus { updates };
+            command.apply(rows);
+            if let Some(position) = flagged_indices
+                .iter()
+                .position(|&idx| idx == command.transaction_index())
+            {
+                cursor = position;
+            }
+            undo_stack.push(command);
+            redo_stack.clear();
         }
     }
 
