@@ -5,4 +5,4 @@ mod csv_loader;
 mod state;
 mod transactions_table;
 
-pub use app::TemplateApp;
+pub use app::FraudOxidizerApp;

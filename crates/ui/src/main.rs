@@ -21,9 +21,9 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "eframe template",
+        "FraudOxidizer",
         native_options,
-        Box::new(|cc| Ok(Box::new(ui::TemplateApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(fraud_oxidizer::FraudOxidizerApp::new(cc)))),
     )
 }
 
@@ -53,7 +53,7 @@ fn main() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|cc| Ok(Box::new(ui::TemplateApp::new(cc)))),
+                Box::new(|cc| Ok(Box::new(fraud_oxidizer::FraudOxidizerApp::new(cc)))),
             )
             .await;
 

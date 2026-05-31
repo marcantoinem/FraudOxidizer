@@ -1378,6 +1378,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "fraud_oxidizer"
+version = "0.0.1"
+dependencies = [
+ "chrono",
+ "eframe",
+ "egui",
+ "egui_extras",
+ "egui_plot",
+ "egui_table",
+ "env_logger",
+ "log",
+ "model",
+ "rfd",
+ "serde",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3701,25 +3720,6 @@ dependencies = [
  "memoffset",
  "tempfile",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "ui"
-version = "0.0.1"
-dependencies = [
- "chrono",
- "eframe",
- "egui",
- "egui_extras",
- "egui_plot",
- "egui_table",
- "env_logger",
- "log",
- "model",
- "rfd",
- "serde",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]

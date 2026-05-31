@@ -2,7 +2,7 @@ use crate::csv_loader::CsvState;
 use crate::state::Progression;
 use crate::transactions_table;
 
-use egui::Panel;
+use egui::{CentralPanel, Panel};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast as _;
 
@@ -14,13 +14,13 @@ struct PersistedAppState {
     current_step: Progression,
 }
 
-pub struct TemplateApp {
+pub struct FraudOxidizerApp {
     csv: CsvState,
     current_step: Progression,
     review_action_history: Vec<transactions_table::ReviewActionLogEntry>,
 }
 
-impl Default for TemplateApp {
+impl Default for FraudOxidizerApp {
     fn default() -> Self {
         Self {
             csv: CsvState::default(),
@@ -30,7 +30,7 @@ impl Default for TemplateApp {
     }
 }
 
-impl TemplateApp {
+impl FraudOxidizerApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let mut app = Self::default();
@@ -52,7 +52,7 @@ impl TemplateApp {
     }
 }
 
-impl eframe::App for TemplateApp {
+impl eframe::App for FraudOxidizerApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         let persisted = PersistedAppState {
             picked_name: self.csv.picked_name.clone(),
@@ -80,7 +80,7 @@ impl eframe::App for TemplateApp {
         });
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.heading("Fraud Detector");
+            ui.heading("FraudOxidizer");
             ui.add_space(6.0);
             show_stepper(ui, &mut self.current_step, self.csv.transactions.is_some());
             ui.add_space(12.0);
@@ -112,7 +112,7 @@ impl eframe::App for TemplateApp {
     }
 }
 
-impl TemplateApp {
+impl FraudOxidizerApp {
     fn show_import_step(&mut self, ui: &mut egui::Ui) {
         ui.label("Step 1: import a CSV file. Once a valid CSV is received, the app advances to review automatically.");
         ui.add_space(8.0);
@@ -173,20 +173,18 @@ impl TemplateApp {
         if let Some(transactions) = &mut self.csv.transactions {
             Panel::right(ui.id().with("review_activity_side"))
                 .resizable(true)
-                .default_size(300.0)
-                .min_size(220.0)
-                .max_size(420.0)
                 .show_inside(ui, |ui| {
                     ui.heading("Review Activity");
                     ui.add_space(6.0);
                     transactions_table::show_review_action_history(ui, &self.review_action_history);
                 });
-
-            transactions_table::show_flagged_transactions_review(
-                ui,
-                &mut transactions.items,
-                &mut self.review_action_history,
-            );
+            CentralPanel::default_margins().show_inside(ui, |ui| {
+                transactions_table::show_flagged_transactions_review(
+                    ui,
+                    &mut transactions.items,
+                    &mut self.review_action_history,
+                );
+            });
         } else {
             ui.label("Load a CSV first.");
         }

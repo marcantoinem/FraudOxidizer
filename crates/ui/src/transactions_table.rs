@@ -53,7 +53,7 @@ pub fn show_review_action_history(ui: &mut egui::Ui, history: &[ReviewActionLogE
 
                 for entry in history.iter().rev() {
                     let action_color = action_color_for_label(&entry.label);
-                    ui.small(
+                    ui.label(
                         egui::RichText::new(&entry.timestamp).color(ui.visuals().weak_text_color()),
                     );
                     ui.label(
@@ -62,7 +62,7 @@ pub fn show_review_action_history(ui: &mut egui::Ui, history: &[ReviewActionLogE
                             .strong(),
                     );
                     ui.label(entry.changed_count.to_string());
-                    ui.small(&entry.summary);
+                    ui.label(&entry.summary);
                     ui.end_row();
                 }
             });
