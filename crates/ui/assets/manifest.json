@@ -1,6 +1,6 @@
 {
-  "name": "ui PWA",
-  "short_name": "ui-pwa",
+  "name": "FraudOxidizer",
+  "short_name": "FraudOx",
   "icons": [
     {
       "src": "./assets/favicon-192x192.png",

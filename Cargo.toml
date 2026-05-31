@@ -26,7 +26,11 @@ invalid_html_tags = "warn"
 [workspace.dependencies]
 anyhow = "1.0.102"
 chrono = "0.4"
-my_country = { version = "0.1.17", features = ["all_countries"] }
+my_country = { version = "0.1.17", features = [
+    "all_countries",
+    "iso_short_name",
+    "unofficial_names",
+] }
 thiserror = "2.0"
 
 [profile.release]

@@ -1,5 +1,5 @@
 [package]
-name = "ui"
+name = "fraud_oxidizer"
 edition.workspace = true
 license.workspace = true
 readme.workspace = true
@@ -13,10 +13,16 @@ targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 [dependencies]
 egui = "0.34.1"
 eframe = { version = "0.34.1", features = ["persistence"] }
+egui_extras = "0.34.1"
+egui_plot = "0.35"
+egui_table = "0.8.0"
 log = "0.4.27"
+model = { path = "../model" }
+rfd = "0.15"
 
 # You only need serde if you want app persistence:
 serde = { version = "1.0.219", features = ["derive"] }
+chrono.workspace = true
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

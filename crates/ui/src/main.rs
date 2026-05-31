@@ -8,8 +8,9 @@ fn main() -> eframe::Result {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([400.0, 300.0])
-            .with_min_inner_size([300.0, 220.0])
+            .with_inner_size([800.0, 600.0])
+            .with_min_inner_size([400.0, 300.0])
+            .with_drag_and_drop(true)
             .with_icon(
                 // NOTE: Adding an icon is optional
                 eframe::icon_data::from_png_bytes(
@@ -20,9 +21,9 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "eframe template",
+        "FraudOxidizer",
         native_options,
-        Box::new(|cc| Ok(Box::new(ui::TemplateApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(fraud_oxidizer::FraudOxidizerApp::new(cc)))),
     )
 }
 
@@ -52,7 +53,7 @@ fn main() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|cc| Ok(Box::new(ui::TemplateApp::new(cc)))),
+                Box::new(|cc| Ok(Box::new(fraud_oxidizer::FraudOxidizerApp::new(cc)))),
             )
             .await;
 
