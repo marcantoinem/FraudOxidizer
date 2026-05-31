@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use crate::data::{country::Country, transaction::Transaction, transactions::Transactions};
 
 pub const FRAUD_SCORE_THRESHOLD: f32 = 0.8;
-pub const FOREIGN_COUNTRY_WEIGHT: f32 = 0.8;
+pub const FOREIGN_COUNTRY_WEIGHT: f32 = 0.9;
 pub const VACATION_FOREIGN_COUNTRY_WEIGHT: f32 = 0.4;
 pub const CARD_TESTING_BURST_WEIGHT: f32 = 0.9;
 pub const CARD_TESTING_BURST_MAX_AMOUNT: f64 = 15.0;
@@ -31,6 +31,13 @@ pub enum FraudFactor {
         max_amount: f64,
         max_gap: Duration,
     },
+    InactiveCardTestingBurst {
+        transaction_count: usize,
+        burst_start: DateTime<Utc>,
+        burst_end: DateTime<Utc>,
+        max_amount: f64,
+        max_gap: Duration,
+    },
 }
 
 impl FraudFactor {
@@ -46,6 +53,7 @@ impl FraudFactor {
                 }
             }
             Self::CardTestingBurst { .. } => CARD_TESTING_BURST_WEIGHT,
+            Self::InactiveCardTestingBurst { .. } => 0.0,
         }
     }
 
@@ -82,6 +90,21 @@ impl FraudFactor {
             } => {
                 format!(
                     "{transaction_count} rapid small online transactions (<= {:.2}) between {} and {} with max gap {}s",
+                    max_amount,
+                    burst_start,
+                    burst_end,
+                    max_gap.num_seconds()
+                )
+            }
+            Self::InactiveCardTestingBurst {
+                transaction_count,
+                burst_start,
+                burst_end,
+                max_amount,
+                max_gap,
+            } => {
+                format!(
+                    "resolved by human review: {transaction_count} rapid small online transactions (<= {:.2}) between {} and {} with max gap {}s",
                     max_amount,
                     burst_start,
                     burst_end,
@@ -311,5 +334,22 @@ mod tests {
                 .iter()
                 .all(|factor| !matches!(factor, FraudFactor::CardTestingBurst { .. }))
         }));
+    }
+
+    #[test]
+    fn inactive_burst_has_zero_weight() {
+        let mut transaction = tx_online(12, (2026, 5, 1, 10, 0, 0), 3.0);
+        transaction
+            .fraud_factors
+            .push(FraudFactor::InactiveCardTestingBurst {
+                transaction_count: 3,
+                burst_start: transaction.timestamp,
+                burst_end: transaction.timestamp + Duration::minutes(2),
+                max_amount: 4.5,
+                max_gap: Duration::minutes(1),
+            });
+
+        assert_eq!(transaction.fraud_factors[0].weight(), 0.0);
+        assert!(!transaction.likely_fraud());
     }
 }

@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 mod card_id_filter;
 mod icons;
 mod review_command;
+mod review_plots;
 mod table_fields_state;
 mod table_filter_state;
 mod table_sort_state;
@@ -484,14 +485,7 @@ fn render_reason_chip(ui: &mut egui::Ui, factor: &FraudFactor) {
         .corner_radius(egui::CornerRadius::same(8))
         .inner_margin(egui::Margin::symmetric(8, 6))
         .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(format!(
-                    "{} (gravity {:.2})",
-                    factor.reason(),
-                    factor.weight()
-                ))
-                .color(text_color),
-            );
+            ui.label(egui::RichText::new(format!("{}", factor.reason(),)).color(text_color));
         })
         .response;
 }
@@ -526,6 +520,18 @@ fn short_reason(factor: &FraudFactor) -> String {
         } => {
             format!(
                 "card testing burst: {transaction_count} tx <= {:.2}, max gap {}s",
+                max_amount,
+                max_gap.num_seconds()
+            )
+        }
+        FraudFactor::InactiveCardTestingBurst {
+            transaction_count,
+            max_amount,
+            max_gap,
+            ..
+        } => {
+            format!(
+                "card testing burst (resolved): {transaction_count} tx <= {:.2}, max gap {}s",
                 max_amount,
                 max_gap.num_seconds()
             )

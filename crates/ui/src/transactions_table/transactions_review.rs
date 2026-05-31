@@ -3,7 +3,8 @@ use model::data::transaction::Transaction;
 use model::process::card_statistics::FraudFactor;
 
 use super::icons::{ActionIcon, icon_button};
-use super::review_command::ReviewCommand;
+use super::review_command::{ReviewCommand, ReviewUpdate};
+use super::review_plots::{burst_histogram_slot, burst_timeline_slot, foreign_trip_table_slot};
 
 pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Transaction]) {
     let flagged_indices: Vec<usize> = rows
@@ -45,8 +46,10 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
     let fraud_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::F);
     let undo_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Z);
     let redo_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Y);
-    let bulk_approve_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::A);
-    let bulk_refuse_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::R);
+    let bulk_approve_shortcut =
+        egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::A);
+    let bulk_refuse_shortcut =
+        egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::R);
 
     let previous_triggered = ui
         .ctx()
@@ -75,23 +78,11 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
 
     if undo_triggered && let Some(command) = undo_stack.pop() {
         command.undo(rows);
-        if let Some(position) = flagged_indices
-            .iter()
-            .position(|&idx| idx == command.transaction_index())
-        {
-            cursor = position;
-        }
         redo_stack.push(command);
     }
 
     if redo_triggered && let Some(command) = redo_stack.pop() {
         command.apply(rows);
-        if let Some(position) = flagged_indices
-            .iter()
-            .position(|&idx| idx == command.transaction_index())
-        {
-            cursor = position;
-        }
         undo_stack.push(command);
     }
 
@@ -139,7 +130,6 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
     let row = &rows[row_index];
     let mut requested_status: Option<HumanReviewStatus> = None;
     let mut requested_bulk_status: Option<HumanReviewStatus> = None;
-    let mut advance_after_action = false;
 
     ui.horizontal(|ui| {
         let previous_clicked = icon_button(ui, "Previous", ActionIcon::Previous, true).clicked();
@@ -214,14 +204,12 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
                         icon_button(ui, "Approve", ActionIcon::Approve, true).clicked();
                     if approve_clicked || approve_triggered {
                         requested_status = Some(HumanReviewStatus::FalsePositive);
-                        advance_after_action = true;
                     }
 
                     let fraud_clicked =
                         icon_button(ui, "Mark fraud", ActionIcon::Fraud, true).clicked();
                     if fraud_clicked || fraud_triggered {
                         requested_status = Some(HumanReviewStatus::TruePositive);
-                        advance_after_action = true;
                     }
 
                     if !burst_series_indices.is_empty() {
@@ -240,6 +228,90 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
                     }
                 });
             });
+
+            {
+                let current_ts = row.timestamp.timestamp() as f64;
+                let current_amount = row.amount;
+                let card_id_label = current_card_id.0;
+
+                let mut plot_slots: Vec<Box<dyn FnOnce(&mut egui::Ui)>> = Vec::new();
+
+                if current_burst_range.is_some() {
+                    let card_amounts: Vec<f64> = rows
+                        .iter()
+                        .filter(|r| r.card_id == current_card_id)
+                        .map(|r| r.amount)
+                        .collect();
+                    let card_all: Vec<[f64; 2]> = rows
+                        .iter()
+                        .filter(|r| r.card_id == current_card_id)
+                        .map(|r| [r.timestamp.timestamp() as f64, r.amount])
+                        .collect();
+                    let burst_ts_amounts: Vec<[f64; 2]> = burst_series_indices
+                        .iter()
+                        .map(|&idx| [rows[idx].timestamp.timestamp() as f64, rows[idx].amount])
+                        .collect();
+                    let current_time_str = chrono::DateTime::from_timestamp(current_ts as i64, 0)
+                        .map(|d: chrono::DateTime<chrono::Utc>| d.format("%H:%M:%S").to_string())
+                        .unwrap_or_default();
+
+                    plot_slots.push(burst_histogram_slot(
+                        card_id_label,
+                        card_amounts,
+                        current_amount,
+                    ));
+                    plot_slots.push(burst_timeline_slot(
+                        card_id_label,
+                        card_all,
+                        burst_ts_amounts,
+                        current_ts,
+                        current_amount,
+                        current_time_str,
+                    ));
+                }
+
+                let has_foreign_trip = row
+                    .fraud_factors
+                    .iter()
+                    .any(|f| matches!(f, FraudFactor::ForeignCountryTrip { .. }));
+                if has_foreign_trip {
+                    let home_country = row.cardholder_country.0.alpha2().to_string();
+                    let mut trip_rows: Vec<(i64, String, f64, String, bool)> = rows
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.card_id == current_card_id)
+                        .map(|(idx, r)| {
+                            let ts = r.timestamp.timestamp();
+                            let time_str = r.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
+                            let country = r.merchant_country.0.alpha2().to_string();
+                            (ts, time_str, r.amount, country, idx == row_index)
+                        })
+                        .collect();
+                    trip_rows.sort_by_key(|(ts, _, _, _, _)| *ts);
+                    plot_slots.push(foreign_trip_table_slot(
+                        card_id_label,
+                        home_country,
+                        trip_rows,
+                    ));
+                }
+
+                if !plot_slots.is_empty() {
+                    ui.add_space(8.0);
+                    let mut iter = plot_slots.into_iter().peekable();
+                    while iter.peek().is_some() {
+                        let a = iter.next();
+                        let b = iter.next();
+                        ui.columns(2, |cols| {
+                            if let Some(slot) = a {
+                                slot(&mut cols[0]);
+                            }
+                            if let Some(slot) = b {
+                                slot(&mut cols[1]);
+                            }
+                        });
+                    }
+                }
+            }
 
             ui.add_space(8.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -264,42 +336,48 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
         });
 
     if let Some(after) = requested_status {
-        let before = rows[row_index].human_review_status;
-        if before != after {
+        let before_status = rows[row_index].human_review_status;
+        let before_factors = rows[row_index].fraud_factors.clone();
+        let after_factors = deactivate_card_testing_burst_factors(&before_factors);
+        if before_status != after || before_factors != after_factors {
             let command = ReviewCommand::SetHumanReviewStatus {
-                transaction_index: row_index,
-                before,
-                after,
+                update: ReviewUpdate {
+                    transaction_index: row_index,
+                    before_status,
+                    after_status: after,
+                    before_factors,
+                    after_factors,
+                },
             };
             command.apply(rows);
             undo_stack.push(command);
             redo_stack.clear();
-
-            if advance_after_action && item_count > 1 {
-                cursor = (cursor + 1) % item_count;
-            }
         }
     }
 
     if let Some(after) = requested_bulk_status {
-        let updates: Vec<(usize, HumanReviewStatus, HumanReviewStatus)> = burst_series_indices
+        let updates: Vec<ReviewUpdate> = burst_series_indices
             .iter()
             .copied()
             .filter_map(|transaction_index| {
-                let before = rows[transaction_index].human_review_status;
-                (before != after).then_some((transaction_index, before, after))
+                let before_status = rows[transaction_index].human_review_status;
+                let before_factors = rows[transaction_index].fraud_factors.clone();
+                let after_factors = deactivate_card_testing_burst_factors(&before_factors);
+                (before_status != after || before_factors != after_factors).then_some(
+                    ReviewUpdate {
+                        transaction_index,
+                        before_status,
+                        after_status: after,
+                        before_factors,
+                        after_factors,
+                    },
+                )
             })
             .collect();
 
         if !updates.is_empty() {
             let command = ReviewCommand::BatchSetHumanReviewStatus { updates };
             command.apply(rows);
-            if let Some(position) = flagged_indices
-                .iter()
-                .position(|&idx| idx == command.transaction_index())
-            {
-                cursor = position;
-            }
             undo_stack.push(command);
             redo_stack.clear();
         }
@@ -310,6 +388,28 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
         d.insert_temp(undo_stack_id, undo_stack);
         d.insert_temp(redo_stack_id, redo_stack);
     });
+}
+
+fn deactivate_card_testing_burst_factors(factors: &[FraudFactor]) -> Vec<FraudFactor> {
+    factors
+        .iter()
+        .map(|factor| match factor {
+            FraudFactor::CardTestingBurst {
+                transaction_count,
+                burst_start,
+                burst_end,
+                max_amount,
+                max_gap,
+            } => FraudFactor::InactiveCardTestingBurst {
+                transaction_count: *transaction_count,
+                burst_start: *burst_start,
+                burst_end: *burst_end,
+                max_amount: *max_amount,
+                max_gap: *max_gap,
+            },
+            _ => factor.clone(),
+        })
+        .collect()
 }
 
 fn shortcut_ui(ui: &mut egui::Ui, shortcut: &egui::KeyboardShortcut) {
