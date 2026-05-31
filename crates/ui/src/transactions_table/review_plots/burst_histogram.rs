@@ -27,7 +27,20 @@ pub fn burst_histogram_slot(
             .height(280.0)
             .y_axis_label("count")
             .x_axis_label("amount ($)")
-            .x_axis_formatter(|mark, _range| format!("{:.2} $", mark.value))
+            .x_axis_formatter(|mark, _range| {
+                if mark.value < 0.0 {
+                    String::new()
+                } else {
+                    format!("{:.2} $", mark.value)
+                }
+            })
+            .y_axis_formatter(|mark, _range| {
+                if mark.value < 0.0 {
+                    String::new()
+                } else {
+                    format!("{:.0}", mark.value)
+                }
+            })
             .show(ui, |plot_ui| {
                 plot_ui.bar_chart(egui_plot::BarChart::new("count", bars));
                 plot_ui.vline(

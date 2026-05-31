@@ -89,6 +89,11 @@ pub fn burst_timeline_slot(
 ) -> Box<dyn FnOnce(&mut egui::Ui)> {
     Box::new(move |ui: &mut egui::Ui| {
         ui.label(egui::RichText::new(format!("Timeline - card {card_id_label}")).strong());
+        let max_amount = card_all
+            .iter()
+            .map(|p| p[1])
+            .fold(current_amount.max(0.0), f64::max)
+            .max(1.0);
         let x_axes = vec![
             egui_plot::AxisHints::new_x()
                 .label("time")
@@ -99,7 +104,14 @@ pub fn burst_timeline_slot(
             .custom_x_axes(x_axes)
             .x_grid_spacer(x_grid)
             .y_axis_label("amount ($)")
-            .y_axis_formatter(|mark, _range| format!("{:.2} $", mark.value))
+            .default_y_bounds(0.0, max_amount * 1.1)
+            .y_axis_formatter(|mark, _range| {
+                if mark.value < 0.0 {
+                    String::new()
+                } else {
+                    format!("{:.2} $", mark.value)
+                }
+            })
             .show(ui, |plot_ui| {
                 plot_ui.points(
                     egui_plot::Points::new(
