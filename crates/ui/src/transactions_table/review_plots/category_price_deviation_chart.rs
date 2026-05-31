@@ -11,14 +11,19 @@ pub fn category_price_deviation_slot(
         ui.label(
             egui::RichText::new(format!("Category spend profile - {category_label}")).strong(),
         );
-        ui.label(format!("average {:.2} $, std dev {:.2} $, z-score {:.2}", average_amount, std_deviation, z_score));
+        ui.label(format!(
+            "average {:.2} $, std dev {:.2} $, z-score {:.2}",
+            average_amount, std_deviation, z_score
+        ));
 
         let max_amount = category_all
             .iter()
             .map(|point| point[1])
             .fold(current_amount.max(average_amount), f64::max)
             .max(1.0);
-        let y_max = (max_amount.max(average_amount + std_deviation * 2.0)) * 1.1;
+        let limit_sigma = model::process::card_statistics::CATEGORY_PRICE_DEVIATION_MIN_Z_SCORE;
+        let trigger_amount = average_amount + std_deviation * limit_sigma;
+        let y_max = (max_amount.max(trigger_amount)) * 1.1;
 
         egui_plot::Plot::new(format!("category_price_deviation_{category_label}"))
             .height(220.0)
@@ -40,13 +45,21 @@ pub fn category_price_deviation_slot(
                 );
                 plot_ui.hline(
                     egui_plot::HLine::new("+1 std dev", average_amount + std_deviation)
-                        .color(egui::Color32::from_rgb(220, 180, 80))
+                        .color(egui::Color32::from_rgb(160, 210, 110))
                         .width(1.5),
                 );
                 plot_ui.hline(
                     egui_plot::HLine::new("+2 std dev", average_amount + std_deviation * 2.0)
-                        .color(egui::Color32::from_rgb(225, 90, 90))
+                        .color(egui::Color32::from_rgb(210, 170, 90))
                         .width(1.5),
+                );
+                plot_ui.hline(
+                    egui_plot::HLine::new(
+                        "+3 std dev limit",
+                        average_amount + std_deviation * limit_sigma,
+                    )
+                    .color(egui::Color32::from_rgb(225, 90, 90))
+                    .width(1.6),
                 );
                 plot_ui.points(
                     egui_plot::Points::new(

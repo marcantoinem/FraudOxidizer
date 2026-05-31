@@ -8,15 +8,21 @@ pub fn card_amount_deviation_slot(
     z_score: f64,
 ) -> Box<dyn FnOnce(&mut egui::Ui)> {
     Box::new(move |ui: &mut egui::Ui| {
-        ui.label(egui::RichText::new(format!("Card spend profile - card {card_id_label}")).strong());
-        ui.label(format!("average {:.2} $, std dev {:.2} $, z-score {:.2}", average_amount, std_deviation, z_score));
+        ui.label(
+            egui::RichText::new(format!("Card spend profile - card {card_id_label}")).strong(),
+        );
+        ui.label(format!(
+            "average {:.2} $, std dev {:.2} $, z-score {:.2}",
+            average_amount, std_deviation, z_score
+        ));
 
         let max_amount = card_all
             .iter()
             .map(|point| point[1])
             .fold(current_amount.max(average_amount), f64::max)
             .max(1.0);
-        let y_max = (max_amount.max(average_amount + std_deviation * 2.0)) * 1.1;
+        let limit_sigma = model::process::card_statistics::CARD_AMOUNT_DEVIATION_MIN_Z_SCORE;
+        let y_max = (max_amount.max(average_amount + std_deviation * limit_sigma)) * 1.1;
         let y_min = 0.0;
 
         egui_plot::Plot::new(format!("card_amount_deviation_{card_id_label}"))
@@ -32,11 +38,6 @@ pub fn card_amount_deviation_slot(
                     .radius(3.0)
                     .color(egui::Color32::from_gray(130)),
                 );
-                plot_ui.vline(
-                    egui_plot::VLine::new("mean", 0.0)
-                        .color(egui::Color32::from_rgb(120, 180, 120))
-                        .width(0.0),
-                );
                 plot_ui.hline(
                     egui_plot::HLine::new("mean", average_amount)
                         .color(egui::Color32::from_rgb(120, 180, 120))
@@ -44,13 +45,21 @@ pub fn card_amount_deviation_slot(
                 );
                 plot_ui.hline(
                     egui_plot::HLine::new("+1 std dev", average_amount + std_deviation)
-                        .color(egui::Color32::from_rgb(220, 180, 80))
+                        .color(egui::Color32::from_rgb(160, 210, 110))
                         .width(1.5),
                 );
                 plot_ui.hline(
                     egui_plot::HLine::new("+2 std dev", average_amount + std_deviation * 2.0)
-                        .color(egui::Color32::from_rgb(225, 90, 90))
+                        .color(egui::Color32::from_rgb(210, 170, 90))
                         .width(1.5),
+                );
+                plot_ui.hline(
+                    egui_plot::HLine::new(
+                        "+3 std dev limit",
+                        average_amount + std_deviation * limit_sigma,
+                    )
+                    .color(egui::Color32::from_rgb(225, 90, 90))
+                    .width(1.6),
                 );
                 plot_ui.points(
                     egui_plot::Points::new(
