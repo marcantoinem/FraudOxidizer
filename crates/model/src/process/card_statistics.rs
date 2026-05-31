@@ -5,11 +5,13 @@ use crate::data::{
     transactions::Transactions,
 };
 
-pub const FRAUD_SCORE_THRESHOLD: f32 = 0.8;
+pub const FRAUD_SCORE_THRESHOLD: f32 = 0.5;
 pub const FOREIGN_COUNTRY_WEIGHT: f32 = 0.9;
 pub const VACATION_FOREIGN_COUNTRY_WEIGHT: f32 = 0.4;
 pub const CARD_TESTING_BURST_WEIGHT: f32 = 0.9;
+pub const MERCHANT_RING_WEIGHT: f32 = 0.85;
 pub const RISKY_CATEGORY_WEIGHT: f32 = 0.18;
+pub const CASHOUT_MIN_AMOUNT: f64 = 250.0;
 pub const CATEGORY_PRICE_DEVIATION_MIN_Z_SCORE: f64 = 3.0;
 pub const CATEGORY_PRICE_DEVIATION_BASE_WEIGHT: f32 = 0.16;
 pub const CATEGORY_PRICE_DEVIATION_STEP_WEIGHT: f32 = 0.12;
@@ -20,9 +22,13 @@ pub const CARD_AMOUNT_DEVIATION_BASE_WEIGHT: f32 = 0.22;
 pub const CARD_AMOUNT_DEVIATION_STEP_WEIGHT: f32 = 0.10;
 pub const CARD_AMOUNT_DEVIATION_MAX_WEIGHT: f32 = 0.65;
 pub const HUMAN_REVIEW_SCORE_THRESHOLD_DEFAULT: f32 = 0.55;
-pub const CARD_TESTING_BURST_MAX_AMOUNT: f64 = 15.0;
-pub const CARD_TESTING_BURST_MIN_COUNT: usize = 3;
-pub const CARD_TESTING_BURST_MAX_GAP: Duration = Duration::minutes(10);
+pub const CARD_TESTING_BURST_MEDIAN_MAX_AMOUNT: f64 = 20.0;
+pub const CARD_TESTING_BURST_MIN_COUNT: usize = 5;
+pub const CARD_TESTING_BURST_WINDOW: Duration = Duration::minutes(30);
+pub const MERCHANT_RING_MIN_AMOUNT: f64 = 200.0;
+pub const MERCHANT_RING_MULTIPLIER: f64 = 5.0;
+pub const MERCHANT_RING_MIN_OUTLIERS: usize = 3;
+pub const MERCHANT_RING_MIN_DISTINCT_CARDS: usize = 3;
 pub const VACATION_GAP_THRESHOLD: Duration = Duration::hours(24);
 pub const VACATION_SPAN_THRESHOLD: Duration = Duration::hours(24);
 
@@ -71,6 +77,14 @@ pub enum FraudFactor {
         z_score: f64,
         weight: f32,
     },
+    MerchantRing {
+        merchant_name: String,
+        amount: f64,
+        merchant_median: f64,
+        ratio: f64,
+        outlier_count: usize,
+        distinct_card_count: usize,
+    },
 }
 
 impl FraudFactor {
@@ -90,6 +104,7 @@ impl FraudFactor {
             Self::RiskyMerchantCategory { .. } => RISKY_CATEGORY_WEIGHT,
             Self::CategoryPriceDeviation { weight, .. } => *weight,
             Self::CardAmountDeviation { weight, .. } => *weight,
+            Self::MerchantRing { .. } => MERCHANT_RING_WEIGHT,
         }
     }
 
@@ -110,7 +125,7 @@ impl FraudFactor {
                 };
 
                 format!(
-                    "cardholder country {} differs from primary {} ({trip_kind}) between {} and {}",
+                    "merchant country {} differs from home {} ({trip_kind}) between {} and {}",
                     country.0.alpha2(),
                     primary_country.0.alpha2(),
                     trip_start,
@@ -176,13 +191,36 @@ impl FraudFactor {
                     card_id, amount, z_score, average_amount, std_deviation
                 )
             }
+            Self::MerchantRing {
+                merchant_name,
+                amount,
+                merchant_median,
+                ratio,
+                outlier_count,
+                distinct_card_count,
+            } => {
+                format!(
+                    "merchant {} cross-card outlier {:.2} vs median {:.2} ({:.1}x), ring outliers {} across {} cards",
+                    merchant_name,
+                    amount,
+                    merchant_median,
+                    ratio,
+                    outlier_count,
+                    distinct_card_count,
+                )
+            }
         }
     }
 }
 
 impl Transaction {
     pub fn fraud_score(&self) -> f32 {
-        self.fraud_factors.iter().map(FraudFactor::weight).sum()
+        // Notebook-aligned score: combine independent signals using noisy-or.
+        let mut product = 1.0_f32;
+        for weight in self.fraud_factors.iter().map(FraudFactor::weight) {
+            product *= 1.0 - weight.clamp(0.0, 1.0);
+        }
+        1.0 - product
     }
 
     pub fn likely_fraud(&self) -> bool {
@@ -203,7 +241,7 @@ impl Transactions {
         crate::process::passes::foreign_country_trip::apply(self);
         crate::process::passes::card_testing_burst::apply(self);
         crate::process::passes::merchant_category_risk::apply(self);
-        crate::process::passes::card_amount_deviation::apply(self);
+        crate::process::passes::merchant_ring::apply(self);
     }
 }
 

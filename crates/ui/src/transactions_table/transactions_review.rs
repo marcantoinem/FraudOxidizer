@@ -9,7 +9,7 @@ use super::icons::{ActionIcon, icon_button};
 use super::review_command::{ReviewCommand, ReviewUpdate};
 use super::review_plots::{
     burst_histogram_slot, burst_timeline_slot, card_amount_deviation_slot,
-    category_price_deviation_slot, foreign_trip_table_slot, risky_category_slot,
+    category_price_deviation_slot, foreign_trip_table_slot, merchant_ring_slot,
 };
 
 pub(crate) fn show_flagged_transactions_review(
@@ -35,11 +35,18 @@ pub(crate) fn show_flagged_transactions_review(
     });
     ui.add_space(8.0);
 
-    let flagged_indices: Vec<usize> = rows
+    let mut flagged_indices: Vec<usize> = rows
         .iter()
         .enumerate()
         .filter_map(|(index, row)| (row.fraud_score() >= *review_threshold).then_some(index))
         .collect();
+    flagged_indices.sort_by(|a, b| {
+        rows[*a]
+            .card_id
+            .0
+            .cmp(&rows[*b].card_id.0)
+            .then_with(|| rows[*a].transaction_id.0.cmp(&rows[*b].transaction_id.0))
+    });
 
     if flagged_indices.is_empty() {
         let hidden_count = rows
@@ -175,13 +182,6 @@ pub(crate) fn show_flagged_transactions_review(
     let row = &rows[row_index];
     let mut requested_status: Option<HumanReviewStatus> = None;
     let mut requested_bulk_status: Option<HumanReviewStatus> = None;
-    let current_risky_category = row.fraud_factors.iter().find_map(|f| {
-        if let FraudFactor::RiskyMerchantCategory { category } = f {
-            Some(*category)
-        } else {
-            None
-        }
-    });
     let current_category_deviation = row.fraud_factors.iter().find_map(|f| {
         if let FraudFactor::CategoryPriceDeviation {
             category,
@@ -214,6 +214,28 @@ pub(crate) fn show_flagged_transactions_review(
         } = f
         {
             Some((*card_id, *amount, *average_amount, *std_deviation, *z_score))
+        } else {
+            None
+        }
+    });
+    let current_merchant_ring = row.fraud_factors.iter().find_map(|f| {
+        if let FraudFactor::MerchantRing {
+            merchant_name,
+            amount,
+            merchant_median,
+            ratio,
+            outlier_count,
+            distinct_card_count,
+        } = f
+        {
+            Some((
+                merchant_name.clone(),
+                *amount,
+                *merchant_median,
+                *ratio,
+                *outlier_count,
+                *distinct_card_count,
+            ))
         } else {
             None
         }
@@ -273,6 +295,12 @@ pub(crate) fn show_flagged_transactions_review(
                     ui.colored_label(egui::Color32::from_rgb(250, 235, 175), "Needs review");
                 }
                 ui.label(format!("score {:.2}", row.fraud_score()));
+                if row.fraud_factors.len() > 1 {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(250, 235, 175),
+                        format!("combined signals x{}", row.fraud_factors.len()),
+                    );
+                }
             });
 
             ui.add_space(8.0);
@@ -392,19 +420,40 @@ pub(crate) fn show_flagged_transactions_review(
                 ));
             }
 
-            if let Some(category) = current_risky_category {
-                let category_label = format!("{:?}", category);
-                let weight = row
-                    .fraud_factors
+            if let Some((
+                merchant_name,
+                amount,
+                merchant_median,
+                ratio,
+                outlier_count,
+                distinct_card_count,
+            )) = current_merchant_ring.clone()
+            {
+                let merchant_rows: Vec<&Transaction> = rows
                     .iter()
-                    .find_map(|factor| match factor {
-                        FraudFactor::RiskyMerchantCategory {
-                            category: factor_category,
-                        } if *factor_category == category => Some(factor.weight()),
-                        _ => None,
-                    })
-                    .unwrap_or(0.0);
-                plot_slots.push(risky_category_slot(category_label, weight));
+                    .filter(|r| r.merchant_name == merchant_name)
+                    .collect();
+                let merchant_points: Vec<[f64; 2]> = merchant_rows
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, r)| [idx as f64 + 1.0, r.amount])
+                    .collect();
+                let current_x = merchant_rows
+                    .iter()
+                    .position(|r| r.transaction_id == row.transaction_id)
+                    .map(|idx| idx as f64 + 1.0)
+                    .unwrap_or(1.0);
+
+                plot_slots.push(merchant_ring_slot(
+                    merchant_name,
+                    merchant_points,
+                    current_x,
+                    amount,
+                    merchant_median,
+                    ratio,
+                    outlier_count,
+                    distinct_card_count,
+                ));
             }
 
             let has_foreign_trip = row

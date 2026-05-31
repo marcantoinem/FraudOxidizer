@@ -29,11 +29,7 @@ impl Transaction {
         self.human_review_status
             .likely_fraud_override()
             .unwrap_or_else(|| {
-                self.fraud_factors
-                    .iter()
-                    .map(FraudFactor::weight)
-                    .sum::<f32>()
-                    >= crate::process::card_statistics::FRAUD_SCORE_THRESHOLD
+                self.fraud_score() >= crate::process::card_statistics::FRAUD_SCORE_THRESHOLD
             })
     }
 }

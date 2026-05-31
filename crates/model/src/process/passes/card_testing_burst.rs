@@ -4,7 +4,7 @@ use crate::data::channel::Channel;
 use crate::data::human_review_status::HumanReviewStatus;
 use crate::data::transactions::Transactions;
 use crate::process::card_statistics::{
-    CARD_TESTING_BURST_MAX_AMOUNT, CARD_TESTING_BURST_MAX_GAP, CARD_TESTING_BURST_MIN_COUNT,
+    CARD_TESTING_BURST_MEDIAN_MAX_AMOUNT, CARD_TESTING_BURST_MIN_COUNT, CARD_TESTING_BURST_WINDOW,
     FraudFactor,
 };
 
@@ -18,92 +18,83 @@ pub fn apply(transactions: &mut Transactions) {
     for indices in by_card.values_mut() {
         indices.sort_by_key(|idx| transactions.items[*idx].timestamp);
 
-        let mut run_start: Option<usize> = None;
+        let online_indices: Vec<usize> = indices
+            .iter()
+            .copied()
+            .filter(|idx| transactions.items[*idx].channel == Channel::Online)
+            .collect();
 
-        for position in 0..indices.len() {
-            let tx_idx = indices[position];
-            let tx = &transactions.items[tx_idx];
-            let qualifies =
-                tx.channel == Channel::Online && tx.amount <= CARD_TESTING_BURST_MAX_AMOUNT;
+        for start in 0..online_indices.len() {
+            let start_idx = online_indices[start];
+            let start_ts = transactions.items[start_idx].timestamp;
+            let end_ts_limit = start_ts + CARD_TESTING_BURST_WINDOW;
 
-            if !qualifies {
-                flush_run(transactions, indices, run_start, position.saturating_sub(1));
-                run_start = None;
+            let mut window_indices: Vec<usize> = Vec::new();
+            for idx in online_indices.iter().skip(start).copied() {
+                if transactions.items[idx].timestamp >= end_ts_limit {
+                    break;
+                }
+                window_indices.push(idx);
+            }
+
+            if window_indices.len() < CARD_TESTING_BURST_MIN_COUNT {
                 continue;
             }
 
-            if let Some(start) = run_start {
-                let prev_idx = indices[position - 1];
-                let gap = tx.timestamp - transactions.items[prev_idx].timestamp;
-                if gap > CARD_TESTING_BURST_MAX_GAP {
-                    flush_run(transactions, indices, Some(start), position - 1);
-                    run_start = Some(position);
-                }
-            } else {
-                run_start = Some(position);
-            }
-        }
+            let mut amounts: Vec<f64> = window_indices
+                .iter()
+                .map(|idx| transactions.items[*idx].amount)
+                .collect();
+            amounts.sort_by(f64::total_cmp);
+            let median_amount = median(&amounts);
 
-        flush_run(
-            transactions,
-            indices,
-            run_start,
-            indices.len().saturating_sub(1),
-        );
+            if median_amount >= CARD_TESTING_BURST_MEDIAN_MAX_AMOUNT {
+                continue;
+            }
+
+            let burst_start = transactions.items[*window_indices.first().expect("window has tx")].timestamp;
+            let burst_end = transactions.items[*window_indices.last().expect("window has tx")].timestamp;
+            let max_amount = amounts.into_iter().fold(0.0_f64, f64::max);
+
+            let mut max_gap = chrono::Duration::zero();
+            for pair in window_indices.windows(2) {
+                let prev = pair[0];
+                let next = pair[1];
+                let gap = transactions.items[next].timestamp - transactions.items[prev].timestamp;
+                if gap > max_gap {
+                    max_gap = gap;
+                }
+            }
+
+            let factor = FraudFactor::CardTestingBurst {
+                transaction_count: window_indices.len(),
+                burst_start,
+                burst_end,
+                max_amount,
+                max_gap,
+            };
+
+            for idx in window_indices {
+                transactions.items[idx].human_review_status = HumanReviewStatus::NeedCheck;
+                transactions.items[idx].fraud_factors.push(factor.clone());
+            }
+
+            // Follow notebook behavior: keep first matching burst window per card.
+            break;
+        }
     }
 }
 
-fn flush_run(
-    transactions: &mut Transactions,
-    indices: &[usize],
-    run_start: Option<usize>,
-    run_end: usize,
-) {
-    let Some(start) = run_start else {
-        return;
-    };
-
-    if run_end < start {
-        return;
+fn median(sorted_values: &[f64]) -> f64 {
+    if sorted_values.is_empty() {
+        return 0.0;
     }
 
-    let count = run_end - start + 1;
-    if count < CARD_TESTING_BURST_MIN_COUNT {
-        return;
-    }
-
-    let first_idx = indices[start];
-    let last_idx = indices[run_end];
-    let burst_start = transactions.items[first_idx].timestamp;
-    let burst_end = transactions.items[last_idx].timestamp;
-
-    let mut max_amount: f64 = 0.0;
-    let mut max_gap = chrono::Duration::zero();
-
-    for pos in start..=run_end {
-        let idx = indices[pos];
-        max_amount = max_amount.max(transactions.items[idx].amount);
-        if pos > start {
-            let prev = indices[pos - 1];
-            let gap = transactions.items[idx].timestamp - transactions.items[prev].timestamp;
-            if gap > max_gap {
-                max_gap = gap;
-            }
-        }
-    }
-
-    let factor = FraudFactor::CardTestingBurst {
-        transaction_count: count,
-        burst_start,
-        burst_end,
-        max_amount,
-        max_gap,
-    };
-
-    for pos in start..=run_end {
-        let idx = indices[pos];
-        transactions.items[idx].human_review_status = HumanReviewStatus::NeedCheck;
-        transactions.items[idx].fraud_factors.push(factor.clone());
+    let mid = sorted_values.len() / 2;
+    if sorted_values.len() % 2 == 1 {
+        sorted_values[mid]
+    } else {
+        (sorted_values[mid - 1] + sorted_values[mid]) / 2.0
     }
 }
 
@@ -155,6 +146,8 @@ mod tests {
                 tx(1, 42, (2026, 5, 1, 10, 0, 0), 3.0, Channel::Online),
                 tx(2, 42, (2026, 5, 1, 10, 2, 0), 4.0, Channel::Online),
                 tx(3, 42, (2026, 5, 1, 10, 4, 30), 5.0, Channel::Online),
+                tx(5, 42, (2026, 5, 1, 10, 6, 0), 6.0, Channel::Online),
+                tx(6, 42, (2026, 5, 1, 10, 7, 20), 7.0, Channel::Online),
                 tx(4, 42, (2026, 5, 1, 11, 30, 0), 40.0, Channel::Online),
             ],
         };
@@ -171,7 +164,7 @@ mod tests {
             })
             .count();
 
-        assert_eq!(burst_hits, 3);
+        assert_eq!(burst_hits, 5);
         assert_eq!(
             transactions.items[0].human_review_status,
             HumanReviewStatus::NeedCheck
@@ -186,6 +179,7 @@ mod tests {
                 tx(2, 77, (2026, 5, 1, 10, 1, 0), 4.0, Channel::Online),
                 tx(3, 77, (2026, 5, 1, 10, 12, 0), 5.0, Channel::Online),
                 tx(4, 77, (2026, 5, 1, 10, 13, 0), 5.0, Channel::Online),
+                tx(5, 77, (2026, 5, 1, 10, 15, 0), 40.0, Channel::Online),
             ],
         };
 

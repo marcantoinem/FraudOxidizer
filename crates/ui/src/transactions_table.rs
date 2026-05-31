@@ -179,24 +179,44 @@ impl<'a> egui_table::TableDelegate for TransactionsTable<'a> {
                 if row.fraud_factors.is_empty() {
                     ui.label("-");
                 } else if matches!(row.human_review_status, HumanReviewStatus::FalsePositive) {
+                    let label_prefix = if row.fraud_factors.len() > 1 {
+                        "combined "
+                    } else {
+                        ""
+                    };
                     ui.colored_label(
                         egui::Color32::from_rgb(120, 180, 120),
-                        format!("reviewed clean ({:.2})", row.fraud_score()),
+                        format!("{label_prefix}reviewed clean ({:.2})", row.fraud_score()),
                     );
                 } else if matches!(row.human_review_status, HumanReviewStatus::TruePositive) {
+                    let label_prefix = if row.fraud_factors.len() > 1 {
+                        "combined "
+                    } else {
+                        ""
+                    };
                     ui.colored_label(
                         egui::Color32::from_rgb(225, 90, 90),
-                        format!("reviewed fraud ({:.2})", row.fraud_score()),
+                        format!("{label_prefix}reviewed fraud ({:.2})", row.fraud_score()),
                     );
                 } else if row.likely_fraud() {
+                    let label_prefix = if row.fraud_factors.len() > 1 {
+                        "combined "
+                    } else {
+                        ""
+                    };
                     ui.colored_label(
                         egui::Color32::from_rgb(225, 90, 90),
-                        format!("likely ({:.2})", row.fraud_score()),
+                        format!("{label_prefix}likely ({:.2})", row.fraud_score()),
                     );
                 } else {
+                    let label_prefix = if row.fraud_factors.len() > 1 {
+                        "combined "
+                    } else {
+                        ""
+                    };
                     ui.colored_label(
                         egui::Color32::from_rgb(210, 180, 80),
-                        format!("signal ({:.2})", row.fraud_score()),
+                        format!("{label_prefix}signal ({:.2})", row.fraud_score()),
                     );
                 }
                 ui.add_space(6.0);
@@ -211,6 +231,12 @@ impl<'a> egui_table::TableDelegate for TransactionsTable<'a> {
                     ui.label("-");
                 } else {
                     ui.horizontal_wrapped(|ui| {
+                        if row.fraud_factors.len() > 1 {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(250, 235, 175),
+                                format!("combined x{}", row.fraud_factors.len()),
+                            );
+                        }
                         for factor in &row.fraud_factors {
                             render_reason_chip_overview(ui, factor);
                         }
@@ -644,6 +670,17 @@ fn short_reason(factor: &FraudFactor) -> String {
             format!(
                 "card {card_id} amount {:.2} vs avg {:.2} ({:.1} sd)",
                 amount, average_amount, z_score
+            )
+        }
+        FraudFactor::MerchantRing {
+            merchant_name,
+            ratio,
+            outlier_count,
+            distinct_card_count,
+            ..
+        } => {
+            format!(
+                "merchant ring {merchant_name}: {ratio:.1}x median, {outlier_count} outliers / {distinct_card_count} cards"
             )
         }
     }

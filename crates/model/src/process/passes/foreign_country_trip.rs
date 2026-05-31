@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 
+use crate::data::channel::Channel;
 use crate::data::human_review_status::HumanReviewStatus;
 use crate::data::{country::Country, transactions::Transactions};
-use crate::process::card_statistics::{
-    FraudFactor, VACATION_GAP_THRESHOLD, VACATION_SPAN_THRESHOLD,
-};
+use crate::process::card_statistics::FraudFactor;
 
 pub fn apply(transactions: &mut Transactions) {
     let mut by_card: BTreeMap<u64, Vec<usize>> = BTreeMap::new();
@@ -18,68 +17,42 @@ pub fn apply(transactions: &mut Transactions) {
     for indices in by_card.values_mut() {
         indices.sort_by_key(|idx| transactions.items[*idx].timestamp);
 
-        let primary_country = primary_country_for_card(transactions, indices)
+        let physical_indices: Vec<usize> = indices
+            .iter()
+            .copied()
+            .filter(|idx| {
+                matches!(
+                    transactions.items[*idx].channel,
+                    Channel::InPerson | Channel::Atm
+                )
+            })
+            .collect();
+        if physical_indices.is_empty() {
+            continue;
+        }
+
+        let primary_country = primary_country_for_card(transactions, &physical_indices)
             .expect("each card has at least one transaction");
 
-        let mut cursor = 0;
-        while cursor < indices.len() {
-            let tx_idx = indices[cursor];
-            let country = transactions.items[tx_idx].cardholder_country;
-            if country == primary_country {
-                cursor += 1;
+        for tx_idx in physical_indices {
+            let transaction = &transactions.items[tx_idx];
+            if transaction.merchant_country == primary_country {
                 continue;
             }
 
-            let start = cursor;
-            let mut end = cursor;
-            while end + 1 < indices.len() {
-                let next_country = transactions.items[indices[end + 1]].cardholder_country;
-                if next_country != country {
-                    break;
-                }
-                end += 1;
-            }
-
-            let start_idx = indices[start];
-            let end_idx = indices[end];
-            let start_ts = transactions.items[start_idx].timestamp;
-            let end_ts = transactions.items[end_idx].timestamp;
-            let gap_before = if start > 0 {
-                Some(start_ts - transactions.items[indices[start - 1]].timestamp)
-            } else {
-                None
-            };
-            let gap_after = if end + 1 < indices.len() {
-                Some(transactions.items[indices[end + 1]].timestamp - end_ts)
-            } else {
-                None
-            };
-            let transaction_count = end - start + 1;
-            let span = end_ts - start_ts;
-            let likely_vacation = if transaction_count == 1 {
-                gap_before.is_some_and(|gap| gap >= VACATION_GAP_THRESHOLD)
-                    && gap_after.is_some_and(|gap| gap >= VACATION_GAP_THRESHOLD)
-            } else {
-                span >= VACATION_SPAN_THRESHOLD
-            };
-
             let factor = FraudFactor::ForeignCountryTrip {
-                country,
+                country: transaction.merchant_country,
                 primary_country,
-                transaction_count,
-                trip_start: start_ts,
-                trip_end: end_ts,
-                gap_before,
-                gap_after,
-                likely_vacation,
+                transaction_count: 1,
+                trip_start: transaction.timestamp,
+                trip_end: transaction.timestamp,
+                gap_before: None,
+                gap_after: None,
+                likely_vacation: false,
             };
 
-            for idx in &indices[start..=end] {
-                transactions.items[*idx].human_review_status = HumanReviewStatus::NeedCheck;
-                transactions.items[*idx].fraud_factors.push(factor.clone());
-            }
-
-            cursor = end + 1;
+            transactions.items[tx_idx].human_review_status = HumanReviewStatus::NeedCheck;
+            transactions.items[tx_idx].fraud_factors.push(factor);
         }
     }
 }
