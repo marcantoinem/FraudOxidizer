@@ -8,6 +8,7 @@ pub struct CsvState {
     pub picked_name: Option<String>,
     pub parse_error: Option<String>,
     pub last_loaded_csv_content: Option<String>,
+    loaded_valid_csv: bool,
     #[cfg(target_arch = "wasm32")]
     pending_csv_tx: Sender<(String, Vec<u8>)>,
     #[cfg(target_arch = "wasm32")]
@@ -24,6 +25,7 @@ impl Default for CsvState {
             picked_name: None,
             parse_error: None,
             last_loaded_csv_content: None,
+            loaded_valid_csv: false,
             #[cfg(target_arch = "wasm32")]
             pending_csv_tx,
             #[cfg(target_arch = "wasm32")]
@@ -41,11 +43,13 @@ impl CsvState {
                 self.transactions = Some(transactions);
                 self.parse_error = None;
                 self.last_loaded_csv_content = Some(content);
+                self.loaded_valid_csv = true;
             }
             Err(e) => {
                 self.transactions = None;
                 self.parse_error = Some(e.to_string());
                 self.last_loaded_csv_content = None;
+                self.loaded_valid_csv = false;
             }
         }
     }
@@ -58,6 +62,7 @@ impl CsvState {
                 self.transactions = None;
                 self.parse_error = Some(e.to_string());
                 self.last_loaded_csv_content = None;
+                self.loaded_valid_csv = false;
             }
         }
     }
@@ -76,6 +81,7 @@ impl CsvState {
                 self.transactions = None;
                 self.parse_error = Some(e.to_string());
                 self.last_loaded_csv_content = None;
+                self.loaded_valid_csv = false;
             }
         }
     }
@@ -95,6 +101,12 @@ impl CsvState {
             };
             self.load_csv_from_bytes(name, &bytes);
         }
+    }
+
+    pub fn take_loaded_valid_csv_event(&mut self) -> bool {
+        let loaded = self.loaded_valid_csv;
+        self.loaded_valid_csv = false;
+        loaded
     }
 
     #[cfg(not(target_arch = "wasm32"))]
