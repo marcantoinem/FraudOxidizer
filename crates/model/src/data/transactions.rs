@@ -49,6 +49,7 @@ impl Transactions {
                 merchant_country: columns[8].parse()?,
                 device_id: optional_string(columns[9]),
                 ip_address: optional_ip_addr(columns[10])?,
+                fraud_factors: Vec::new(),
             });
         }
 

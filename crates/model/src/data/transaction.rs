@@ -2,6 +2,7 @@ use super::{
     card_id::CardId, channel::Channel, country::Country, merchant_category::MerchantCategory,
     transaction_id::TransactionId,
 };
+use crate::process::card_statistics::FraudFactor;
 
 use chrono::{DateTime, Utc};
 use std::net::IpAddr;
@@ -19,4 +20,5 @@ pub struct Transaction {
     pub merchant_country: Country,
     pub device_id: Option<String>,
     pub ip_address: Option<IpAddr>,
+    pub fraud_factors: Vec<FraudFactor>,
 }

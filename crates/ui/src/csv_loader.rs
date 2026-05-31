@@ -36,7 +36,8 @@ impl CsvState {
     pub fn load_csv_content(&mut self, name: String, content: String) {
         self.picked_name = Some(name);
         match Transactions::parse_csv_content(&content) {
-            Ok(transactions) => {
+            Ok(mut transactions) => {
+                transactions.apply_fraud_factors();
                 self.transactions = Some(transactions);
                 self.parse_error = None;
                 self.last_loaded_csv_content = Some(content);

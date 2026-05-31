@@ -1,8 +1,9 @@
 use model::data::transaction::Transaction;
+use model::process::card_statistics::FraudFactor;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
-const FIELD_COUNT: usize = 11;
+const FIELD_COUNT: usize = 13;
 
 const FIELD_TITLES: [&str; FIELD_COUNT] = [
     "Transaction ID",
@@ -16,10 +17,12 @@ const FIELD_TITLES: [&str; FIELD_COUNT] = [
     "Merchant Country",
     "Device ID",
     "IP Address",
+    "Fraud",
+    "Fraud Signals",
 ];
 
 const FIELD_WIDTHS: [f32; FIELD_COUNT] = [
-    140.0, 170.0, 110.0, 90.0, 220.0, 160.0, 100.0, 150.0, 150.0, 140.0, 170.0,
+    140.0, 170.0, 110.0, 90.0, 220.0, 160.0, 100.0, 150.0, 150.0, 140.0, 170.0, 130.0, 560.0,
 ];
 
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
@@ -117,6 +120,44 @@ impl<'a> egui_table::TableDelegate for TransactionsTable<'a> {
         let Some(&field_idx) = self.visible_fields.get(cell.col_nr) else {
             return;
         };
+
+        if field_idx == 11 {
+            ui.horizontal(|ui| {
+                ui.add_space(6.0);
+                if row.fraud_factors.is_empty() {
+                    ui.label("-");
+                } else if row.likely_fraud() {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(225, 90, 90),
+                        format!("likely ({:.2})", row.fraud_score()),
+                    );
+                } else {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(210, 180, 80),
+                        format!("signal ({:.2})", row.fraud_score()),
+                    );
+                }
+                ui.add_space(6.0);
+            });
+            return;
+        }
+
+        if field_idx == 12 {
+            ui.horizontal(|ui| {
+                ui.add_space(6.0);
+                if row.fraud_factors.is_empty() {
+                    ui.label("-");
+                } else {
+                    ui.horizontal_wrapped(|ui| {
+                        for factor in &row.fraud_factors {
+                            render_reason_chip(ui, factor);
+                        }
+                    });
+                }
+                ui.add_space(6.0);
+            });
+            return;
+        }
 
         let text = match field_idx {
             0 => format!("{}", row.transaction_id.0),
@@ -378,6 +419,21 @@ fn compare_rows(
         8 => format!("{:?}", left.merchant_country).cmp(&format!("{:?}", right.merchant_country)),
         9 => left.device_id.cmp(&right.device_id),
         10 => left.ip_address.cmp(&right.ip_address),
+        11 => left.fraud_score().total_cmp(&right.fraud_score()),
+        12 => left
+            .fraud_factors
+            .iter()
+            .map(short_reason)
+            .collect::<Vec<_>>()
+            .join(" | ")
+            .cmp(
+                &right
+                    .fraud_factors
+                    .iter()
+                    .map(short_reason)
+                    .collect::<Vec<_>>()
+                    .join(" | "),
+            ),
         _ => Ordering::Equal,
     };
 
@@ -389,6 +445,56 @@ fn compare_rows(
         left.transaction_id.0.cmp(&right.transaction_id.0)
     } else {
         ordering
+    }
+}
+
+fn render_reason_chip(ui: &mut egui::Ui, factor: &FraudFactor) {
+    let (fill, text_color) = if factor.weight() >= 0.9 {
+        (
+            egui::Color32::from_rgb(80, 28, 28),
+            egui::Color32::from_rgb(255, 210, 210),
+        )
+    } else {
+        (
+            egui::Color32::from_rgb(74, 64, 28),
+            egui::Color32::from_rgb(250, 235, 175),
+        )
+    };
+
+    let response = egui::Frame::new()
+        .fill(fill)
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::symmetric(4, 1))
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new(short_reason(factor)).color(text_color));
+        })
+        .response;
+
+    response.on_hover_text(factor.reason());
+}
+
+fn short_reason(factor: &FraudFactor) -> String {
+    match factor {
+        FraudFactor::ForeignCountryTrip {
+            country,
+            primary_country,
+            likely_vacation,
+            ..
+        } => {
+            if *likely_vacation {
+                format!(
+                    "travel {}>{}",
+                    primary_country.0.alpha2(),
+                    country.0.alpha2()
+                )
+            } else {
+                format!(
+                    "country jump {}>{}",
+                    primary_country.0.alpha2(),
+                    country.0.alpha2()
+                )
+            }
+        }
     }
 }
 
