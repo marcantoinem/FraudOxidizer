@@ -2,6 +2,7 @@ use crate::csv_loader::CsvState;
 use crate::state::Progression;
 use crate::transactions_table;
 
+use egui::Panel;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast as _;
 
@@ -16,6 +17,7 @@ struct PersistedAppState {
 pub struct TemplateApp {
     csv: CsvState,
     current_step: Progression,
+    review_action_history: Vec<transactions_table::ReviewActionLogEntry>,
 }
 
 impl Default for TemplateApp {
@@ -23,6 +25,7 @@ impl Default for TemplateApp {
         Self {
             csv: CsvState::default(),
             current_step: Progression::default(),
+            review_action_history: Vec::new(),
         }
     }
 }
@@ -83,6 +86,7 @@ impl eframe::App for TemplateApp {
             ui.add_space(12.0);
 
             if self.csv.take_loaded_valid_csv_event() {
+                self.review_action_history.clear();
                 self.current_step = self.current_step.next();
             }
 
@@ -161,13 +165,28 @@ impl TemplateApp {
 
     fn show_review_step(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            ui.label("Step 2: review flagged transactions in a carousel (one at a time).");
+            ui.label("Step 2: review flagged transactions");
             ui.label("Shortcut labels are shown directly on the carousel controls.");
         });
         ui.add_space(8.0);
 
         if let Some(transactions) = &mut self.csv.transactions {
-            transactions_table::show_flagged_transactions_review(ui, &mut transactions.items);
+            Panel::right(ui.id().with("review_activity_side"))
+                .resizable(true)
+                .default_size(300.0)
+                .min_size(220.0)
+                .max_size(420.0)
+                .show_inside(ui, |ui| {
+                    ui.heading("Review Activity");
+                    ui.add_space(6.0);
+                    transactions_table::show_review_action_history(ui, &self.review_action_history);
+                });
+
+            transactions_table::show_flagged_transactions_review(
+                ui,
+                &mut transactions.items,
+                &mut self.review_action_history,
+            );
         } else {
             ui.label("Load a CSV first.");
         }

@@ -24,7 +24,7 @@ pub fn burst_histogram_slot(
             })
             .collect();
         egui_plot::Plot::new("card_amount_histogram")
-            .height(280.0)
+            .height(220.0)
             .y_axis_label("count")
             .x_axis_label("amount ($)")
             .x_axis_formatter(|mark, _range| {

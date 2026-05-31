@@ -100,7 +100,7 @@ pub fn burst_timeline_slot(
                 .formatter(time_formatter),
         ];
         egui_plot::Plot::new("card_timeline")
-            .height(280.0)
+            .height(220.0)
             .custom_x_axes(x_axes)
             .x_grid_spacer(x_grid)
             .y_axis_label("amount ($)")

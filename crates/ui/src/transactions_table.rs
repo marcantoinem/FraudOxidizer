@@ -23,6 +23,67 @@ use table_sort_state::TableSortState;
 
 pub(crate) use transactions_review::show_flagged_transactions_review;
 
+#[derive(Debug, Clone)]
+pub struct ReviewActionLogEntry {
+    pub label: String,
+    pub changed_count: usize,
+    pub summary: String,
+    pub timestamp: String,
+}
+
+pub fn show_review_action_history(ui: &mut egui::Ui, history: &[ReviewActionLogEntry]) {
+    if history.is_empty() {
+        ui.label("No review actions yet.");
+        return;
+    }
+
+    ui.label(format!("{} actions", history.len()));
+    ui.add_space(6.0);
+
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        egui::Grid::new("review_action_history_table")
+            .striped(true)
+            .spacing([10.0, 6.0])
+            .show(ui, |ui| {
+                ui.strong("Time");
+                ui.strong("Action");
+                ui.strong("Tx");
+                ui.strong("Details");
+                ui.end_row();
+
+                for entry in history.iter().rev() {
+                    let action_color = action_color_for_label(&entry.label);
+                    ui.small(
+                        egui::RichText::new(&entry.timestamp).color(ui.visuals().weak_text_color()),
+                    );
+                    ui.label(
+                        egui::RichText::new(&entry.label)
+                            .color(action_color)
+                            .strong(),
+                    );
+                    ui.label(entry.changed_count.to_string());
+                    ui.small(&entry.summary);
+                    ui.end_row();
+                }
+            });
+    });
+}
+
+fn action_color_for_label(label: &str) -> egui::Color32 {
+    let lower = label.to_ascii_lowercase();
+    if lower.contains("fraud") {
+        egui::Color32::from_rgb(225, 90, 90)
+    } else if lower.contains("approve") {
+        egui::Color32::from_rgb(120, 180, 120)
+    } else if lower.contains("undo") {
+        egui::Color32::from_rgb(170, 170, 220)
+    } else if lower.contains("redo") {
+        egui::Color32::from_rgb(140, 190, 235)
+    } else {
+        egui::Color32::from_rgb(250, 235, 175)
+    }
+}
+
 const FIELD_COUNT: usize = 13;
 
 const FIELD_TITLES: [&str; FIELD_COUNT] = [
