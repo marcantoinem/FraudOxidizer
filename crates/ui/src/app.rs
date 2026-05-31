@@ -5,7 +5,7 @@ use model::process::card_statistics::HUMAN_REVIEW_SCORE_THRESHOLD_DEFAULT;
 
 use egui::{CentralPanel, Panel};
 #[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsCast as _;
+use web_sys::wasm_bindgen::JsCast as _;
 
 fn default_human_review_score_threshold() -> f32 {
     HUMAN_REVIEW_SCORE_THRESHOLD_DEFAULT
@@ -351,7 +351,7 @@ fn export_reviewed_csv(
     #[cfg(target_arch = "wasm32")]
     {
         let csv_content = transactions.export_csv_content();
-        let encoded = js_sys::encode_uri_component(&csv_content);
+        let encoded = web_sys::js_sys::encode_uri_component(&csv_content);
         let url = format!("data:text/csv;charset=utf-8,{}", encoded);
 
         if let Some(window) = web_sys::window() {

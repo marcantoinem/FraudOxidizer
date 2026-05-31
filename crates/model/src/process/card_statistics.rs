@@ -14,6 +14,11 @@ pub const CATEGORY_PRICE_DEVIATION_MIN_Z_SCORE: f64 = 3.0;
 pub const CATEGORY_PRICE_DEVIATION_BASE_WEIGHT: f32 = 0.16;
 pub const CATEGORY_PRICE_DEVIATION_STEP_WEIGHT: f32 = 0.12;
 pub const CATEGORY_PRICE_DEVIATION_MAX_WEIGHT: f32 = 0.75;
+pub const CARD_AMOUNT_DEVIATION_MIN_Z_SCORE: f64 = 3.0;
+pub const CARD_AMOUNT_DEVIATION_MIN_MEAN_MULTIPLIER: f64 = 5.0;
+pub const CARD_AMOUNT_DEVIATION_BASE_WEIGHT: f32 = 0.22;
+pub const CARD_AMOUNT_DEVIATION_STEP_WEIGHT: f32 = 0.10;
+pub const CARD_AMOUNT_DEVIATION_MAX_WEIGHT: f32 = 0.65;
 pub const HUMAN_REVIEW_SCORE_THRESHOLD_DEFAULT: f32 = 0.55;
 pub const CARD_TESTING_BURST_MAX_AMOUNT: f64 = 15.0;
 pub const CARD_TESTING_BURST_MIN_COUNT: usize = 3;
@@ -58,6 +63,14 @@ pub enum FraudFactor {
         z_score: f64,
         weight: f32,
     },
+    CardAmountDeviation {
+        card_id: u64,
+        amount: f64,
+        average_amount: f64,
+        std_deviation: f64,
+        z_score: f64,
+        weight: f32,
+    },
 }
 
 impl FraudFactor {
@@ -76,6 +89,7 @@ impl FraudFactor {
             Self::InactiveCardTestingBurst { .. } => 0.0,
             Self::RiskyMerchantCategory { .. } => RISKY_CATEGORY_WEIGHT,
             Self::CategoryPriceDeviation { weight, .. } => *weight,
+            Self::CardAmountDeviation { weight, .. } => *weight,
         }
     }
 
@@ -149,6 +163,19 @@ impl FraudFactor {
                     amount, z_score, category, average_amount, std_deviation
                 )
             }
+            Self::CardAmountDeviation {
+                card_id,
+                amount,
+                average_amount,
+                std_deviation,
+                z_score,
+                ..
+            } => {
+                format!(
+                    "card {} amount {:.2} is {:.2} standard deviations above the card average {:.2} (std dev {:.2})",
+                    card_id, amount, z_score, average_amount, std_deviation
+                )
+            }
         }
     }
 }
@@ -176,6 +203,7 @@ impl Transactions {
         crate::process::passes::foreign_country_trip::apply(self);
         crate::process::passes::card_testing_burst::apply(self);
         crate::process::passes::merchant_category_risk::apply(self);
+        crate::process::passes::card_amount_deviation::apply(self);
     }
 }
 
@@ -195,6 +223,17 @@ pub fn is_risky_category(category: MerchantCategory) -> bool {
         category,
         MerchantCategory::GiftCard | MerchantCategory::Electronics
     )
+}
+
+pub fn card_amount_deviation_weight(z_score: f64) -> f32 {
+    if z_score < CARD_AMOUNT_DEVIATION_MIN_Z_SCORE {
+        return 0.0;
+    }
+
+    let weight = CARD_AMOUNT_DEVIATION_BASE_WEIGHT
+        + ((z_score - CARD_AMOUNT_DEVIATION_MIN_Z_SCORE) as f32)
+            * CARD_AMOUNT_DEVIATION_STEP_WEIGHT;
+    weight.min(CARD_AMOUNT_DEVIATION_MAX_WEIGHT)
 }
 
 #[cfg(test)]
@@ -431,5 +470,18 @@ mod tests {
         assert!(low > 0.0);
         assert!(higher > low);
         assert_eq!(capped, CATEGORY_PRICE_DEVIATION_MAX_WEIGHT);
+    }
+
+    #[test]
+    fn card_amount_deviation_weight_requires_a_higher_threshold() {
+        let below_cutoff = card_amount_deviation_weight(2.5);
+        let low = card_amount_deviation_weight(CARD_AMOUNT_DEVIATION_MIN_Z_SCORE);
+        let higher = card_amount_deviation_weight(5.0);
+        let capped = card_amount_deviation_weight(20.0);
+
+        assert_eq!(below_cutoff, 0.0);
+        assert!(low > 0.0);
+        assert!(higher > low);
+        assert_eq!(capped, CARD_AMOUNT_DEVIATION_MAX_WEIGHT);
     }
 }

@@ -629,6 +629,18 @@ fn short_reason(factor: &FraudFactor) -> String {
                 category, amount, average_amount, z_score
             )
         }
+        FraudFactor::CardAmountDeviation {
+            card_id,
+            z_score,
+            amount,
+            average_amount,
+            ..
+        } => {
+            format!(
+                "card {card_id} amount {:.2} vs avg {:.2} ({:.1} sd)",
+                amount, average_amount, z_score
+            )
+        }
     }
 }
 

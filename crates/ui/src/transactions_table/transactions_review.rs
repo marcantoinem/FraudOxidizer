@@ -7,7 +7,10 @@ use crate::transactions_table::country_label;
 
 use super::icons::{ActionIcon, icon_button};
 use super::review_command::{ReviewCommand, ReviewUpdate};
-use super::review_plots::{burst_histogram_slot, burst_timeline_slot, foreign_trip_table_slot};
+use super::review_plots::{
+    burst_histogram_slot, burst_timeline_slot, card_amount_deviation_slot,
+    category_price_deviation_slot, foreign_trip_table_slot, risky_category_slot,
+};
 
 pub(crate) fn show_flagged_transactions_review(
     ui: &mut egui::Ui,
@@ -172,6 +175,49 @@ pub(crate) fn show_flagged_transactions_review(
     let row = &rows[row_index];
     let mut requested_status: Option<HumanReviewStatus> = None;
     let mut requested_bulk_status: Option<HumanReviewStatus> = None;
+    let current_risky_category = row.fraud_factors.iter().find_map(|f| {
+        if let FraudFactor::RiskyMerchantCategory { category } = f {
+            Some(*category)
+        } else {
+            None
+        }
+    });
+    let current_category_deviation = row.fraud_factors.iter().find_map(|f| {
+        if let FraudFactor::CategoryPriceDeviation {
+            category,
+            amount,
+            average_amount,
+            std_deviation,
+            z_score,
+            ..
+        } = f
+        {
+            Some((
+                *category,
+                *amount,
+                *average_amount,
+                *std_deviation,
+                *z_score,
+            ))
+        } else {
+            None
+        }
+    });
+    let current_card_deviation = row.fraud_factors.iter().find_map(|f| {
+        if let FraudFactor::CardAmountDeviation {
+            card_id,
+            amount,
+            average_amount,
+            std_deviation,
+            z_score,
+            ..
+        } = f
+        {
+            Some((*card_id, *amount, *average_amount, *std_deviation, *z_score))
+        } else {
+            None
+        }
+    });
 
     ui.horizontal(|ui| {
         let previous_clicked = icon_button(ui, "Previous", ActionIcon::Previous, true).clicked();
@@ -307,6 +353,60 @@ pub(crate) fn show_flagged_transactions_review(
                 ));
             }
 
+            if let Some((card_id, amount, average_amount, std_deviation, z_score)) =
+                current_card_deviation
+            {
+                let card_all: Vec<[f64; 2]> = rows
+                    .iter()
+                    .filter(|r| r.card_id.0 == card_id)
+                    .map(|r| [r.timestamp.timestamp() as f64, r.amount])
+                    .collect();
+                plot_slots.push(card_amount_deviation_slot(
+                    card_id_label,
+                    card_all,
+                    current_ts,
+                    amount,
+                    average_amount,
+                    std_deviation,
+                    z_score,
+                ));
+            }
+
+            if let Some((category, amount, average_amount, std_deviation, z_score)) =
+                current_category_deviation
+            {
+                let category_label = format!("{:?}", category);
+                let category_all: Vec<[f64; 2]> = rows
+                    .iter()
+                    .filter(|r| r.merchant_category == category)
+                    .map(|r| [r.timestamp.timestamp() as f64, r.amount])
+                    .collect();
+                plot_slots.push(category_price_deviation_slot(
+                    category_label,
+                    category_all,
+                    current_ts,
+                    amount,
+                    average_amount,
+                    std_deviation,
+                    z_score,
+                ));
+            }
+
+            if let Some(category) = current_risky_category {
+                let category_label = format!("{:?}", category);
+                let weight = row
+                    .fraud_factors
+                    .iter()
+                    .find_map(|factor| match factor {
+                        FraudFactor::RiskyMerchantCategory {
+                            category: factor_category,
+                        } if *factor_category == category => Some(factor.weight()),
+                        _ => None,
+                    })
+                    .unwrap_or(0.0);
+                plot_slots.push(risky_category_slot(category_label, weight));
+            }
+
             let has_foreign_trip = row
                 .fraud_factors
                 .iter()
@@ -319,7 +419,7 @@ pub(crate) fn show_flagged_transactions_review(
                     .map(|(idx, r)| {
                         let ts = r.timestamp.timestamp();
                         let time_str = r.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
-                        let country = country_label(r.merchant_country);
+                        let country = country_label(r.cardholder_country);
                         (ts, time_str, r.amount, country, idx == row_index)
                     })
                     .collect();
