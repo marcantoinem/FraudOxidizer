@@ -1,6 +1,7 @@
 pub mod card_id;
 pub mod channel;
 pub mod country;
+pub mod human_review_status;
 pub mod merchant_category;
 pub mod transaction;
 pub mod transaction_id;

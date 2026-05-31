@@ -96,7 +96,8 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
     use crate::data::{
-        card_id::CardId, channel::Channel, country::Country, merchant_category::MerchantCategory,
+        card_id::CardId, channel::Channel, country::Country,
+        human_review_status::HumanReviewStatus, merchant_category::MerchantCategory,
         transaction::Transaction, transaction_id::TransactionId, transactions::Transactions,
     };
     use my_country::Country as CountryCode;
@@ -123,6 +124,7 @@ mod tests {
             device_id: None,
             ip_address: None,
             fraud_factors: Vec::new(),
+            human_review_status: HumanReviewStatus::NotNeeded,
         }
     }
 

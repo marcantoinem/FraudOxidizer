@@ -21,10 +21,6 @@ const FIELD_TITLES: [&str; FIELD_COUNT] = [
     "Fraud Signals",
 ];
 
-const FIELD_WIDTHS: [f32; FIELD_COUNT] = [
-    140.0, 170.0, 110.0, 90.0, 220.0, 160.0, 100.0, 150.0, 150.0, 140.0, 170.0, 130.0, 560.0,
-];
-
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 struct TableFieldsState {
     visible: [bool; FIELD_COUNT],
@@ -376,7 +372,7 @@ pub fn show_transactions_table(ui: &mut egui::Ui, rows: &[Transaction]) {
 
     let columns: Vec<egui_table::Column> = visible_fields
         .iter()
-        .map(|&field_idx| egui_table::Column::new(FIELD_WIDTHS[field_idx]))
+        .map(|&_| egui_table::Column::new(300.0))
         .collect();
 
     let mut table_delegate = TransactionsTable {
@@ -390,6 +386,7 @@ pub fn show_transactions_table(ui: &mut egui::Ui, rows: &[Transaction]) {
     egui_table::Table::new()
         .id_salt("transactions_table")
         .columns(columns)
+        .auto_size_mode(egui_table::AutoSizeMode::OnParentResize)
         .headers([egui_table::HeaderRow::new(row_height)])
         .num_rows(row_indices.len() as u64)
         .show(ui, &mut table_delegate);

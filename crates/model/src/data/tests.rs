@@ -7,11 +7,14 @@ use std::{
 };
 
 use super::{
-    card_id::CardId, channel::Channel, country::Country, merchant_category::MerchantCategory,
-    optional_ip_addr, optional_string, parse_amount, parse_prefixed_number, parse_timestamp,
+    card_id::CardId, channel::Channel, country::Country, human_review_status::HumanReviewStatus,
+    merchant_category::MerchantCategory, optional_ip_addr, optional_string, parse_amount,
+    parse_prefixed_number, parse_timestamp, transaction::Transaction,
     transaction_id::TransactionId, transactions::Transactions,
 };
 use crate::ParseCsvError;
+use crate::process::card_statistics::FraudFactor;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use my_country::Country as CountryCode;
 
 fn write_csv(contents: &str) -> PathBuf {
@@ -284,4 +287,115 @@ fn transactions_parse_csv_accepts_project_csv_file() {
         Transactions::parse_csv(&path).expect("expected repository transactions.csv to be valid");
 
     assert!(!transactions.items.is_empty());
+}
+
+#[test]
+fn transactions_export_csv_appends_likely_fraud_column() {
+    let timestamp = DateTime::from_naive_utc_and_offset(
+        NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2026, 5, 5).expect("valid date"),
+            NaiveTime::from_hms_opt(18, 39, 29).expect("valid time"),
+        ),
+        Utc,
+    );
+
+    let transactions = Transactions {
+        items: vec![
+            Transaction {
+                transaction_id: TransactionId(1),
+                timestamp,
+                card_id: CardId(0),
+                amount: 115.44,
+                merchant_name: "Bell Canada".to_owned(),
+                merchant_category: MerchantCategory::Utilities,
+                channel: Channel::Online,
+                cardholder_country: Country(CountryCode::CA),
+                merchant_country: Country(CountryCode::CA),
+                device_id: Some("dev_bc0178b6".to_owned()),
+                ip_address: Some("24.114.150.203".parse().expect("valid ip")),
+                fraud_factors: vec![FraudFactor::ForeignCountryTrip {
+                    country: Country(CountryCode::US),
+                    primary_country: Country(CountryCode::CA),
+                    transaction_count: 1,
+                    trip_start: timestamp,
+                    trip_end: timestamp,
+                    gap_before: None,
+                    gap_after: None,
+                    likely_vacation: false,
+                }],
+                human_review_status: HumanReviewStatus::NotNeeded,
+            },
+            Transaction {
+                transaction_id: TransactionId(2),
+                timestamp: DateTime::from_naive_utc_and_offset(
+                    NaiveDateTime::new(
+                        NaiveDate::from_ymd_opt(2026, 5, 5).expect("valid date"),
+                        NaiveTime::from_hms_opt(19, 0, 0).expect("valid time"),
+                    ),
+                    Utc,
+                ),
+                card_id: CardId(1),
+                amount: 10.0,
+                merchant_name: "Local Shop".to_owned(),
+                merchant_category: MerchantCategory::Grocery,
+                channel: Channel::InPerson,
+                cardholder_country: Country(CountryCode::CA),
+                merchant_country: Country(CountryCode::CA),
+                device_id: None,
+                ip_address: None,
+                fraud_factors: Vec::new(),
+                human_review_status: HumanReviewStatus::TruePositive,
+            },
+        ],
+    };
+
+    let exported = transactions.export_csv_content();
+
+    assert!(exported.starts_with("transaction_id,timestamp,card_id,amount,merchant_name,merchant_category,channel,cardholder_country,merchant_country,device_id,ip_address,likely_fraud\n"));
+    assert!(exported.contains("tx_000001,2026-05-05T18:39:29,card_000,115.44,Bell Canada,utilities,online,CA,CA,dev_bc0178b6,24.114.150.203,true"));
+    assert!(exported.contains(
+        "tx_000002,2026-05-05T19:00:00,card_001,10,Local Shop,grocery,in_person,CA,CA,,,true"
+    ));
+}
+
+#[test]
+fn transactions_export_csv_respects_false_positive_review() {
+    let timestamp = DateTime::from_naive_utc_and_offset(
+        NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2026, 5, 5).expect("valid date"),
+            NaiveTime::from_hms_opt(20, 0, 0).expect("valid time"),
+        ),
+        Utc,
+    );
+
+    let transactions = Transactions {
+        items: vec![Transaction {
+            transaction_id: TransactionId(3),
+            timestamp,
+            card_id: CardId(2),
+            amount: 250.0,
+            merchant_name: "Suspicious Merchant".to_owned(),
+            merchant_category: MerchantCategory::Electronics,
+            channel: Channel::Online,
+            cardholder_country: Country(CountryCode::CA),
+            merchant_country: Country(CountryCode::US),
+            device_id: Some("dev_x".to_owned()),
+            ip_address: Some("203.0.113.10".parse().expect("valid ip")),
+            fraud_factors: vec![FraudFactor::ForeignCountryTrip {
+                country: Country(CountryCode::US),
+                primary_country: Country(CountryCode::CA),
+                transaction_count: 1,
+                trip_start: timestamp,
+                trip_end: timestamp,
+                gap_before: None,
+                gap_after: None,
+                likely_vacation: false,
+            }],
+            human_review_status: HumanReviewStatus::FalsePositive,
+        }],
+    };
+
+    let exported = transactions.export_csv_content();
+
+    assert!(exported.contains("tx_000003,2026-05-05T20:00:00,card_002,250,Suspicious Merchant,electronics,online,CA,US,dev_x,203.0.113.10,false"));
 }

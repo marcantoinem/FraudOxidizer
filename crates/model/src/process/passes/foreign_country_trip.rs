@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 
+use crate::data::human_review_status::HumanReviewStatus;
 use crate::data::{country::Country, transactions::Transactions};
 use crate::process::card_statistics::{
     FraudFactor, VACATION_GAP_THRESHOLD, VACATION_SPAN_THRESHOLD,
@@ -74,6 +75,7 @@ pub fn apply(transactions: &mut Transactions) {
             };
 
             for idx in &indices[start..=end] {
+                transactions.items[*idx].human_review_status = HumanReviewStatus::NeedCheck;
                 transactions.items[*idx].fraud_factors.push(factor.clone());
             }
 
