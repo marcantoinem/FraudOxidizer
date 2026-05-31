@@ -1,6 +1,5 @@
 pub fn foreign_trip_table_slot(
     card_id_label: u64,
-    home_country: String,
     trip_rows: Vec<(i64, String, f64, String, bool)>,
 ) -> Box<dyn FnOnce(&mut egui::Ui)> {
     Box::new(move |ui: &mut egui::Ui| {
@@ -20,12 +19,7 @@ pub fn foreign_trip_table_slot(
             .map(|p| trip_rows.len().saturating_sub(p + 5))
             .unwrap_or(0);
 
-        ui.label(
-            egui::RichText::new(format!(
-                "Transactions - card {card_id_label} (home: {home_country})"
-            ))
-            .strong(),
-        );
+        ui.label(egui::RichText::new(format!("Transactions - card {card_id_label}")).strong());
         ui.add_space(4.0);
         egui::Grid::new("foreign_trip_table")
             .striped(true)

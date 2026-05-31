@@ -2,6 +2,8 @@ use model::data::human_review_status::HumanReviewStatus;
 use model::data::transaction::Transaction;
 use model::process::card_statistics::FraudFactor;
 
+use crate::transactions_table::country_label;
+
 use super::icons::{ActionIcon, icon_button};
 use super::review_command::{ReviewCommand, ReviewUpdate};
 use super::review_plots::{burst_histogram_slot, burst_timeline_slot, foreign_trip_table_slot};
@@ -251,9 +253,6 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
                         .iter()
                         .map(|&idx| [rows[idx].timestamp.timestamp() as f64, rows[idx].amount])
                         .collect();
-                    let current_time_str = chrono::DateTime::from_timestamp(current_ts as i64, 0)
-                        .map(|d: chrono::DateTime<chrono::Utc>| d.format("%H:%M:%S").to_string())
-                        .unwrap_or_default();
 
                     plot_slots.push(burst_histogram_slot(
                         card_id_label,
@@ -266,7 +265,6 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
                         burst_ts_amounts,
                         current_ts,
                         current_amount,
-                        current_time_str,
                     ));
                 }
 
@@ -275,7 +273,6 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
                     .iter()
                     .any(|f| matches!(f, FraudFactor::ForeignCountryTrip { .. }));
                 if has_foreign_trip {
-                    let home_country = row.cardholder_country.0.alpha2().to_string();
                     let mut trip_rows: Vec<(i64, String, f64, String, bool)> = rows
                         .iter()
                         .enumerate()
@@ -283,16 +280,12 @@ pub(crate) fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Tr
                         .map(|(idx, r)| {
                             let ts = r.timestamp.timestamp();
                             let time_str = r.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
-                            let country = r.merchant_country.0.alpha2().to_string();
+                            let country = country_label(r.merchant_country);
                             (ts, time_str, r.amount, country, idx == row_index)
                         })
                         .collect();
                     trip_rows.sort_by_key(|(ts, _, _, _, _)| *ts);
-                    plot_slots.push(foreign_trip_table_slot(
-                        card_id_label,
-                        home_country,
-                        trip_rows,
-                    ));
+                    plot_slots.push(foreign_trip_table_slot(card_id_label, trip_rows));
                 }
 
                 if !plot_slots.is_empty() {

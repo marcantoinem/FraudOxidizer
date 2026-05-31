@@ -184,8 +184,8 @@ mod tests {
             items: vec![
                 tx(1, 77, (2026, 5, 1, 10, 0, 0), 3.0, Channel::Online),
                 tx(2, 77, (2026, 5, 1, 10, 1, 0), 4.0, Channel::Online),
-                tx(3, 77, (2026, 5, 1, 10, 7, 0), 5.0, Channel::Online),
-                tx(4, 77, (2026, 5, 1, 10, 8, 0), 5.0, Channel::Online),
+                tx(3, 77, (2026, 5, 1, 10, 12, 0), 5.0, Channel::Online),
+                tx(4, 77, (2026, 5, 1, 10, 13, 0), 5.0, Channel::Online),
             ],
         };
 

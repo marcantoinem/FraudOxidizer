@@ -8,7 +8,7 @@ pub const VACATION_FOREIGN_COUNTRY_WEIGHT: f32 = 0.4;
 pub const CARD_TESTING_BURST_WEIGHT: f32 = 0.9;
 pub const CARD_TESTING_BURST_MAX_AMOUNT: f64 = 15.0;
 pub const CARD_TESTING_BURST_MIN_COUNT: usize = 3;
-pub const CARD_TESTING_BURST_MAX_GAP: Duration = Duration::minutes(5);
+pub const CARD_TESTING_BURST_MAX_GAP: Duration = Duration::minutes(10);
 pub const VACATION_GAP_THRESHOLD: Duration = Duration::hours(24);
 pub const VACATION_SPAN_THRESHOLD: Duration = Duration::hours(24);
 
