@@ -3,7 +3,6 @@ use model::data::transactions::Transactions;
 #[cfg(target_arch = "wasm32")]
 use std::sync::mpsc::{self, Receiver, Sender};
 
-#[derive(Default)]
 pub struct CsvState {
     pub transactions: Option<Transactions>,
     pub picked_name: Option<String>,
@@ -14,6 +13,26 @@ pub struct CsvState {
     pending_csv_tx: Sender<(String, Vec<u8>)>,
     #[cfg(target_arch = "wasm32")]
     pending_csv_rx: Receiver<(String, Vec<u8>)>,
+}
+
+#[allow(clippy::derivable_impls)]
+impl Default for CsvState {
+    fn default() -> Self {
+        #[cfg(target_arch = "wasm32")]
+        let (pending_csv_tx, pending_csv_rx) = mpsc::channel();
+
+        Self {
+            transactions: None,
+            picked_name: None,
+            parse_error: None,
+            last_loaded_csv_content: None,
+            loaded_valid_csv: false,
+            #[cfg(target_arch = "wasm32")]
+            pending_csv_tx,
+            #[cfg(target_arch = "wasm32")]
+            pending_csv_rx,
+        }
+    }
 }
 
 impl CsvState {
