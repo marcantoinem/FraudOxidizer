@@ -37,7 +37,8 @@ pub fn apply(transactions: &mut Transactions) {
             .copied()
             .filter(|idx| {
                 let amount = transactions.items[*idx].amount;
-                amount > merchant_median * MERCHANT_RING_MULTIPLIER && amount > MERCHANT_RING_MIN_AMOUNT
+                amount > merchant_median * MERCHANT_RING_MULTIPLIER
+                    && amount > MERCHANT_RING_MIN_AMOUNT
             })
             .collect();
 

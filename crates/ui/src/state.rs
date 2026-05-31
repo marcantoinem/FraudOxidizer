@@ -1,14 +1,9 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize, Default)]
 pub enum Progression {
+    #[default]
     ImportCsv,
     CheckProbableFraud,
     ExportCsvView,
-}
-
-impl Default for Progression {
-    fn default() -> Self {
-        Self::ImportCsv
-    }
 }
 
 impl Progression {

@@ -1,3 +1,4 @@
+#[allow(clippy::too_many_arguments)]
 pub fn merchant_ring_slot(
     merchant_name: String,
     merchant_points: Vec<[f64; 2]>,

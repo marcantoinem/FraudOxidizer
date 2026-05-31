@@ -491,6 +491,8 @@ pub fn show_transactions_table(ui: &mut egui::Ui, rows: &[Transaction]) {
 
     egui::ScrollArea::both()
         .id_salt("transactions_table_scroll")
+        .max_height(ui.available_height())
+        .max_width(ui.available_width())
         .auto_shrink([false, false])
         .show(ui, |ui| {
             egui_table::Table::new()
@@ -590,13 +592,8 @@ fn render_reason_chip_inner(ui: &mut egui::Ui, factor: &FraudFactor, compact: bo
         .corner_radius(egui::CornerRadius::same(8))
         .inner_margin(egui::Margin::symmetric(4, 2))
         .show(ui, |ui| {
-            if compact {
-                ui.label(egui::RichText::new(text).color(text_color));
-            } else {
-                ui.label(egui::RichText::new(text).color(text_color));
-            }
-        })
-        .response;
+            ui.label(egui::RichText::new(text).color(text_color));
+        });
 }
 
 fn short_reason(factor: &FraudFactor) -> String {
@@ -681,6 +678,15 @@ fn short_reason(factor: &FraudFactor) -> String {
         } => {
             format!(
                 "merchant ring {merchant_name}: {ratio:.1}x median, {outlier_count} outliers / {distinct_card_count} cards"
+            )
+        }
+        FraudFactor::FraudulentIdentityLink {
+            matched_confirmed_count,
+            matched_likely_count,
+            ..
+        } => {
+            format!(
+                "shared fraud identity: {matched_confirmed_count} confirmed, {matched_likely_count} likely"
             )
         }
     }

@@ -52,8 +52,10 @@ pub fn apply(transactions: &mut Transactions) {
                 continue;
             }
 
-            let burst_start = transactions.items[*window_indices.first().expect("window has tx")].timestamp;
-            let burst_end = transactions.items[*window_indices.last().expect("window has tx")].timestamp;
+            let burst_start =
+                transactions.items[*window_indices.first().expect("window has tx")].timestamp;
+            let burst_end =
+                transactions.items[*window_indices.last().expect("window has tx")].timestamp;
             let max_amount = amounts.into_iter().fold(0.0_f64, f64::max);
 
             let mut max_gap = chrono::Duration::zero();

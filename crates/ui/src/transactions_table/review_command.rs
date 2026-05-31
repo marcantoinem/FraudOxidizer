@@ -35,6 +35,9 @@ impl ReviewCommand {
                 }
             }
         }
+
+        // Review decisions can strengthen/weaken device/IP propagation confidence.
+        model::process::passes::fraudulent_identity_link::apply_to_items(rows);
     }
 
     pub(super) fn undo(&self, rows: &mut [Transaction]) {
@@ -54,5 +57,8 @@ impl ReviewCommand {
                 }
             }
         }
+
+        // Keep propagated identity-link factors consistent after undo.
+        model::process::passes::fraudulent_identity_link::apply_to_items(rows);
     }
 }

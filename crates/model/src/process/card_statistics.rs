@@ -1,4 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
+use std::net::IpAddr;
 
 use crate::data::{
     country::Country, merchant_category::MerchantCategory, transaction::Transaction,
@@ -10,6 +11,8 @@ pub const FOREIGN_COUNTRY_WEIGHT: f32 = 0.9;
 pub const VACATION_FOREIGN_COUNTRY_WEIGHT: f32 = 0.4;
 pub const CARD_TESTING_BURST_WEIGHT: f32 = 0.9;
 pub const MERCHANT_RING_WEIGHT: f32 = 0.85;
+pub const FRAUDULENT_IDENTITY_LINK_WEIGHT_LIKELY: f32 = 0.35;
+pub const FRAUDULENT_IDENTITY_LINK_WEIGHT_CONFIRMED: f32 = 0.80;
 pub const RISKY_CATEGORY_WEIGHT: f32 = 0.18;
 pub const CASHOUT_MIN_AMOUNT: f64 = 250.0;
 pub const CATEGORY_PRICE_DEVIATION_MIN_Z_SCORE: f64 = 3.0;
@@ -85,6 +88,13 @@ pub enum FraudFactor {
         outlier_count: usize,
         distinct_card_count: usize,
     },
+    FraudulentIdentityLink {
+        device_id: Option<String>,
+        ip_address: Option<IpAddr>,
+        matched_confirmed_count: usize,
+        matched_likely_count: usize,
+        weight: f32,
+    },
 }
 
 impl FraudFactor {
@@ -105,6 +115,7 @@ impl FraudFactor {
             Self::CategoryPriceDeviation { weight, .. } => *weight,
             Self::CardAmountDeviation { weight, .. } => *weight,
             Self::MerchantRing { .. } => MERCHANT_RING_WEIGHT,
+            Self::FraudulentIdentityLink { weight, .. } => *weight,
         }
     }
 
@@ -209,6 +220,22 @@ impl FraudFactor {
                     distinct_card_count,
                 )
             }
+            Self::FraudulentIdentityLink {
+                device_id,
+                ip_address,
+                matched_confirmed_count,
+                matched_likely_count,
+                ..
+            } => {
+                let device_label = device_id.as_deref().unwrap_or("-");
+                let ip_label = ip_address
+                    .map(|ip| ip.to_string())
+                    .unwrap_or_else(|| "-".to_owned());
+                format!(
+                    "shares known-fraud identity (device {}, ip {}) from {} confirmed and {} likely transactions",
+                    device_label, ip_label, matched_confirmed_count, matched_likely_count,
+                )
+            }
         }
     }
 }
@@ -242,6 +269,7 @@ impl Transactions {
         crate::process::passes::card_testing_burst::apply(self);
         crate::process::passes::merchant_category_risk::apply(self);
         crate::process::passes::merchant_ring::apply(self);
+        crate::process::passes::fraudulent_identity_link::apply(self);
     }
 }
 

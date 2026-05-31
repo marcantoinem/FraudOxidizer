@@ -349,6 +349,7 @@ pub(crate) fn show_flagged_transactions_review(
             let current_amount = row.amount;
             let card_id_label = current_card_id.0;
 
+            #[allow(clippy::type_complexity)]
             let mut plot_slots: Vec<Box<dyn FnOnce(&mut egui::Ui)>> = Vec::new();
 
             if current_burst_range.is_some() {

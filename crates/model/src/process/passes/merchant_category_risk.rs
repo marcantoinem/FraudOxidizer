@@ -6,26 +6,21 @@ use crate::process::card_statistics::{
 };
 
 pub fn apply(transactions: &mut Transactions) {
-    let mut by_card_amounts: BTreeMap<u64, Vec<f64>> = BTreeMap::new();
+    let mut category_stats: BTreeMap<String, (usize, f64, f64)> = BTreeMap::new();
 
     for transaction in &transactions.items {
-        by_card_amounts
-            .entry(transaction.card_id.0)
-            .or_default()
-            .push(transaction.amount);
-    }
-
-    let mut baselines: BTreeMap<u64, (f64, f64)> = BTreeMap::new();
-    for (card_id, amounts) in &mut by_card_amounts {
-        amounts.sort_by(f64::total_cmp);
-        let median_value = median_of_sorted(amounts);
-        let mut abs_dev: Vec<f64> = amounts
-            .iter()
-            .map(|amount| (amount - median_value).abs())
-            .collect();
-        abs_dev.sort_by(f64::total_cmp);
-        let mad = median_of_sorted(&abs_dev);
-        baselines.insert(*card_id, (median_value, mad));
+        category_stats
+            .entry(format!("{:?}", transaction.merchant_category))
+            .and_modify(|(count, sum, sum_sq)| {
+                *count += 1;
+                *sum += transaction.amount;
+                *sum_sq += transaction.amount * transaction.amount;
+            })
+            .or_insert((
+                1,
+                transaction.amount,
+                transaction.amount * transaction.amount,
+            ));
     }
 
     for transaction in &mut transactions.items {
@@ -43,16 +38,26 @@ pub fn apply(transactions: &mut Transactions) {
             continue;
         }
 
-        let Some((card_median, card_mad)) = baselines.get(&transaction.card_id.0).copied() else {
+        let category_key = format!("{:?}", transaction.merchant_category);
+        let Some((count, sum, sum_sq)) = category_stats.get(&category_key).copied() else {
             continue;
         };
-
-        let robust_scale = (card_mad * 1.4826).max(1.0);
-        if transaction.amount <= card_median {
+        if count < 2 {
             continue;
         }
 
-        let z_score = (transaction.amount - card_median) / robust_scale;
+        let average_amount = sum / count as f64;
+        if transaction.amount <= average_amount {
+            continue;
+        }
+
+        let variance = (sum_sq / count as f64) - (average_amount * average_amount);
+        let std_deviation = variance.max(0.0).sqrt();
+        if std_deviation <= f64::EPSILON {
+            continue;
+        }
+
+        let z_score = (transaction.amount - average_amount) / std_deviation;
         let weight = category_price_deviation_weight(z_score);
         if weight <= 0.0 {
             continue;
@@ -63,24 +68,11 @@ pub fn apply(transactions: &mut Transactions) {
             .push(FraudFactor::CategoryPriceDeviation {
                 category: transaction.merchant_category,
                 amount: transaction.amount,
-                average_amount: card_median,
-                std_deviation: robust_scale,
+                average_amount,
+                std_deviation,
                 z_score,
                 weight,
             });
-    }
-}
-
-fn median_of_sorted(sorted_values: &[f64]) -> f64 {
-    if sorted_values.is_empty() {
-        return 0.0;
-    }
-
-    let mid = sorted_values.len() / 2;
-    if sorted_values.len() % 2 == 1 {
-        sorted_values[mid]
-    } else {
-        (sorted_values[mid - 1] + sorted_values[mid]) / 2.0
     }
 }
 
