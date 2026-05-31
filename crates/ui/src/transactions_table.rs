@@ -151,7 +151,7 @@ impl<'a> egui_table::TableDelegate for TransactionsTable<'a> {
                 } else {
                     ui.horizontal_wrapped(|ui| {
                         for factor in &row.fraud_factors {
-                            render_reason_chip(ui, factor);
+                            render_reason_chip_overview(ui, factor);
                         }
                     });
                 }
@@ -468,6 +468,14 @@ fn compare_rows(
 }
 
 fn render_reason_chip(ui: &mut egui::Ui, factor: &FraudFactor) {
+    render_reason_chip_inner(ui, factor, false);
+}
+
+fn render_reason_chip_overview(ui: &mut egui::Ui, factor: &FraudFactor) {
+    render_reason_chip_inner(ui, factor, true);
+}
+
+fn render_reason_chip_inner(ui: &mut egui::Ui, factor: &FraudFactor, compact: bool) {
     let (fill, text_color) = if factor.weight() >= 0.9 {
         (
             egui::Color32::from_rgb(80, 28, 28),
@@ -479,13 +487,22 @@ fn render_reason_chip(ui: &mut egui::Ui, factor: &FraudFactor) {
             egui::Color32::from_rgb(250, 235, 175),
         )
     };
+    let text = if compact {
+        short_reason(factor)
+    } else {
+        factor.reason()
+    };
 
     egui::Frame::new()
         .fill(fill)
         .corner_radius(egui::CornerRadius::same(8))
-        .inner_margin(egui::Margin::symmetric(8, 6))
+        .inner_margin(egui::Margin::symmetric(4, 2))
         .show(ui, |ui| {
-            ui.label(egui::RichText::new(format!("{}", factor.reason(),)).color(text_color));
+            if compact {
+                ui.label(egui::RichText::new(text).color(text_color));
+            } else {
+                ui.label(egui::RichText::new(text).color(text_color));
+            }
         })
         .response;
 }
