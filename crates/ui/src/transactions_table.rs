@@ -463,13 +463,18 @@ pub fn show_transactions_table(ui: &mut egui::Ui, rows: &[Transaction]) {
     };
     let row_height = ui.text_style_height(&egui::TextStyle::Body) + 10.0;
 
-    egui_table::Table::new()
-        .id_salt("transactions_table")
-        .columns(columns)
-        .auto_size_mode(egui_table::AutoSizeMode::OnParentResize)
-        .headers([egui_table::HeaderRow::new(row_height)])
-        .num_rows(row_indices.len() as u64)
-        .show(ui, &mut table_delegate);
+    egui::ScrollArea::both()
+        .id_salt("transactions_table_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            egui_table::Table::new()
+                .id_salt("transactions_table")
+                .columns(columns)
+                .auto_size_mode(egui_table::AutoSizeMode::OnParentResize)
+                .headers([egui_table::HeaderRow::new(row_height)])
+                .num_rows(row_indices.len() as u64)
+                .show(ui, &mut table_delegate);
+        });
 
     sort_state = table_delegate.sort_state;
     ui.ctx()
