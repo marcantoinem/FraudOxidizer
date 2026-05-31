@@ -4,6 +4,24 @@ use model::process::card_statistics::FraudFactor;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
+mod card_id_filter;
+mod icons;
+mod review_command;
+mod table_fields_state;
+mod table_filter_state;
+mod table_sort_state;
+mod transactions_review;
+
+use card_id_filter::{
+    CardIdFilter, card_id_matches_filter, normalize_card_id_query, parse_card_id_filter,
+};
+use icons::paint_sort_icon;
+use table_fields_state::TableFieldsState;
+use table_filter_state::TableFilterState;
+use table_sort_state::TableSortState;
+
+pub(crate) use transactions_review::show_flagged_transactions_review;
+
 const FIELD_COUNT: usize = 13;
 
 const FIELD_TITLES: [&str; FIELD_COUNT] = [
@@ -21,31 +39,6 @@ const FIELD_TITLES: [&str; FIELD_COUNT] = [
     "Fraud",
     "Fraud Signals",
 ];
-
-#[derive(Clone, serde::Deserialize, serde::Serialize)]
-struct TableFieldsState {
-    visible: [bool; FIELD_COUNT],
-}
-
-#[derive(Clone, serde::Deserialize, serde::Serialize, Default)]
-struct TableSortState {
-    field_idx: Option<usize>,
-    descending: bool,
-}
-
-#[derive(Clone, serde::Deserialize, serde::Serialize, Default)]
-struct TableFilterState {
-    card_id_query: String,
-    autocomplete_open: bool,
-}
-
-impl Default for TableFieldsState {
-    fn default() -> Self {
-        Self {
-            visible: [true; FIELD_COUNT],
-        }
-    }
-}
 
 struct TransactionsTable<'a> {
     rows: &'a [Transaction],
@@ -330,6 +323,12 @@ pub fn show_transactions_table(ui: &mut egui::Ui, rows: &[Transaction]) {
                 filter_state.autocomplete_open = false;
             }
         }
+
+        ui.add_space(10.0);
+        ui.checkbox(
+            &mut filter_state.reviewed_or_marked_only,
+            "Reviewed or system-marked only",
+        );
     });
 
     egui::CollapsingHeader::new("Columns")
@@ -359,11 +358,19 @@ pub fn show_transactions_table(ui: &mut egui::Ui, rows: &[Transaction]) {
         .collect();
 
     let parsed_filter = parse_card_id_filter(&filter_state.card_id_query);
+    let reviewed_or_marked_only = filter_state.reviewed_or_marked_only;
     let mut row_indices: Vec<usize> = rows
         .iter()
         .enumerate()
         .filter_map(|(idx, row)| {
-            card_id_matches_filter(row.card_id.0, parsed_filter).then_some(idx)
+            let passes_card_filter = card_id_matches_filter(row.card_id.0, parsed_filter);
+            let passes_review_filter = !reviewed_or_marked_only
+                || matches!(
+                    row.human_review_status,
+                    HumanReviewStatus::FalsePositive | HumanReviewStatus::TruePositive
+                )
+                || !row.fraud_factors.is_empty();
+            (passes_card_filter && passes_review_filter).then_some(idx)
         })
         .collect();
 
@@ -373,7 +380,7 @@ pub fn show_transactions_table(ui: &mut egui::Ui, rows: &[Transaction]) {
         });
     }
 
-    if !matches!(parsed_filter, CardIdFilter::Any) {
+    if !matches!(parsed_filter, CardIdFilter::Any) || reviewed_or_marked_only {
         ui.label(format!(
             "Showing {} of {} transactions.",
             row_indices.len(),
@@ -472,16 +479,21 @@ fn render_reason_chip(ui: &mut egui::Ui, factor: &FraudFactor) {
         )
     };
 
-    let response = egui::Frame::new()
+    egui::Frame::new()
         .fill(fill)
         .corner_radius(egui::CornerRadius::same(8))
-        .inner_margin(egui::Margin::symmetric(4, 1))
+        .inner_margin(egui::Margin::symmetric(8, 6))
         .show(ui, |ui| {
-            ui.label(egui::RichText::new(short_reason(factor)).color(text_color));
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} (gravity {:.2})",
+                    factor.reason(),
+                    factor.weight()
+                ))
+                .color(text_color),
+            );
         })
         .response;
-
-    response.on_hover_text(factor.reason());
 }
 
 fn short_reason(factor: &FraudFactor) -> String {
@@ -509,301 +521,10 @@ fn short_reason(factor: &FraudFactor) -> String {
     }
 }
 
-pub fn show_flagged_transactions_review(ui: &mut egui::Ui, rows: &mut [Transaction]) {
-    let flagged_indices: Vec<usize> = rows
-        .iter()
-        .enumerate()
-        .filter_map(|(index, row)| (!row.fraud_factors.is_empty()).then_some(index))
-        .collect();
-
-    if flagged_indices.is_empty() {
-        ui.label("No transactions were flagged by the detector.");
-        return;
-    }
-
-    let cursor_id = ui.make_persistent_id("flagged_review_carousel_cursor");
-    let mut cursor = ui
-        .ctx()
-        .data_mut(|d| d.get_persisted::<usize>(cursor_id))
-        .unwrap_or(0);
-
-    let item_count = flagged_indices.len();
-    if cursor >= item_count {
-        cursor = item_count - 1;
-    }
-
-    let previous_shortcut =
-        egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::ArrowLeft);
-    let next_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::ArrowRight);
-    let approve_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::A);
-    let fraud_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::F);
-    let reset_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::R);
-
-    let previous_triggered = ui
-        .ctx()
-        .input_mut(|i| i.consume_shortcut(&previous_shortcut));
-    let next_triggered = ui.ctx().input_mut(|i| i.consume_shortcut(&next_shortcut));
-    let approve_triggered = ui
-        .ctx()
-        .input_mut(|i| i.consume_shortcut(&approve_shortcut));
-    let fraud_triggered = ui.ctx().input_mut(|i| i.consume_shortcut(&fraud_shortcut));
-    let reset_triggered = ui.ctx().input_mut(|i| i.consume_shortcut(&reset_shortcut));
-
-    if previous_triggered {
-        cursor = if cursor == 0 {
-            item_count - 1
-        } else {
-            cursor - 1
-        };
-    }
-    if next_triggered {
-        cursor = (cursor + 1) % item_count;
-    }
-
-    let row_index = flagged_indices[cursor];
-    let row = &mut rows[row_index];
-
-    ui.horizontal(|ui| {
-        let previous_clicked = ui.button("Previous").clicked();
-        if previous_clicked {
-            cursor = if cursor == 0 {
-                item_count - 1
-            } else {
-                cursor - 1
-            };
-        }
-        ui.strong(format!("{} / {}", cursor + 1, item_count));
-        let next_clicked = ui.button("Next").clicked();
-        if next_clicked {
-            cursor = (cursor + 1) % item_count;
-        }
-    });
-
-    ui.add_space(8.0);
-
-    egui::Frame::new()
-        .fill(ui.visuals().extreme_bg_color)
-        .corner_radius(egui::CornerRadius::same(12))
-        .inner_margin(egui::Margin::symmetric(14, 12))
-        .show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.heading(format!(
-                    "tx_{} · card_{}",
-                    row.transaction_id.0, row.card_id.0
-                ));
-                ui.label(format!("{:.2} $", row.amount));
-                ui.label(format!("{}", row.timestamp.format("%Y-%m-%d %H:%M:%S")));
-            });
-
-            ui.add_space(4.0);
-            ui.horizontal_wrapped(|ui| {
-                ui.label(format!("Merchant: {}", row.merchant_name));
-                ui.label(format!("Category: {:?}", row.merchant_category));
-                ui.label(format!("Channel: {:?}", row.channel));
-                ui.label(format!(
-                    "Country: {} -> {}",
-                    row.cardholder_country.0.alpha2(),
-                    row.merchant_country.0.alpha2()
-                ));
-            });
-
-            ui.add_space(4.0);
-            ui.horizontal_wrapped(|ui| {
-                if matches!(row.human_review_status, HumanReviewStatus::FalsePositive) {
-                    ui.colored_label(egui::Color32::from_rgb(120, 180, 120), "Reviewed clean");
-                } else if matches!(row.human_review_status, HumanReviewStatus::TruePositive) {
-                    ui.colored_label(egui::Color32::from_rgb(225, 90, 90), "Reviewed fraud");
-                } else {
-                    ui.colored_label(egui::Color32::from_rgb(250, 235, 175), "Needs review");
-                }
-                ui.label(format!("score {:.2}", row.fraud_score()));
-            });
-
-            ui.add_space(8.0);
-            ui.horizontal_wrapped(|ui| {
-                for factor in &row.fraud_factors {
-                    render_reason_chip(ui, factor);
-                }
-            });
-
-            ui.add_space(10.0);
-            let mut advance_after_action = false;
-            ui.horizontal(|ui| {
-                let approve_clicked = ui.button("Approve").clicked();
-                if approve_clicked || approve_triggered {
-                    row.human_review_status = HumanReviewStatus::FalsePositive;
-                    advance_after_action = true;
-                }
-                let fraud_clicked = ui.button("Mark fraud").clicked();
-                if fraud_clicked || fraud_triggered {
-                    row.human_review_status = HumanReviewStatus::TruePositive;
-                    advance_after_action = true;
-                }
-                let reset_clicked = ui.button("Reset").clicked();
-                if reset_clicked || reset_triggered {
-                    row.human_review_status = HumanReviewStatus::NeedCheck;
-                }
-            });
-
-            ui.add_space(8.0);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                shortcut_legend_item(ui, &reset_shortcut, "reset");
-                ui.add_space(10.0);
-                shortcut_legend_item(ui, &fraud_shortcut, "mark fraud");
-                ui.add_space(10.0);
-                shortcut_legend_item(ui, &approve_shortcut, "approve");
-                ui.add_space(10.0);
-                shortcut_legend_item(ui, &next_shortcut, "next");
-                ui.add_space(10.0);
-                shortcut_legend_item(ui, &previous_shortcut, "previous");
-            });
-
-            if advance_after_action && item_count > 1 {
-                cursor = (cursor + 1) % item_count;
-            }
-        });
-
-    ui.ctx().data_mut(|d| d.insert_persisted(cursor_id, cursor));
-}
-
-fn shortcut_ui(ui: &mut egui::Ui, shortcut: &egui::KeyboardShortcut) {
-    let text = ui.ctx().format_shortcut(shortcut);
-    let body_height = ui.text_style_height(&egui::TextStyle::Body);
-    let dark_mode = ui.visuals().dark_mode;
-    let key_fill = ui.visuals().widgets.inactive.bg_fill.linear_multiply(1.05);
-    let key_stroke = ui
-        .visuals()
-        .widgets
-        .inactive
-        .bg_stroke
-        .color
-        .linear_multiply(1.05);
-    let key_text = ui.visuals().widgets.inactive.fg_stroke.color;
-
-    let font_id = egui::FontId::monospace((body_height - 2.0).max(10.0));
-    let galley = ui.painter().layout_no_wrap(text, font_id.clone(), key_text);
-    let horizontal_padding = 6.0;
-    let vertical_padding = 2.0;
-    let desired_size = egui::vec2(
-        (galley.size().x + horizontal_padding * 2.0).max(body_height + 6.0),
-        (galley.size().y + vertical_padding * 2.0).max(body_height + 2.0),
-    );
-    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
-
-    ui.painter().rect(
-        rect,
-        egui::CornerRadius::same(6),
-        key_fill,
-        egui::Stroke::new(1.0, key_stroke),
-        egui::StrokeKind::Inside,
-    );
-
-    let text_pos = egui::pos2(
-        rect.center().x - galley.size().x / 2.0,
-        rect.center().y - galley.size().y / 2.0,
-    );
-    ui.painter().galley(text_pos, galley, key_text);
-
-    let rect = response.rect.shrink(1.0);
-    let highlight = key_fill.gamma_multiply(if dark_mode { 1.18 } else { 1.05 });
-    let shadow = key_fill.gamma_multiply(if dark_mode { 0.55 } else { 0.88 });
-
-    ui.painter().hline(
-        rect.x_range(),
-        rect.top() + 0.5,
-        egui::Stroke::new(1.0, highlight),
-    );
-    ui.painter().hline(
-        rect.x_range(),
-        rect.bottom() - 0.5,
-        egui::Stroke::new(1.0, shadow),
-    );
-}
-
-fn shortcut_legend_item(ui: &mut egui::Ui, shortcut: &egui::KeyboardShortcut, label: &str) {
-    ui.horizontal(|ui| {
-        shortcut_ui(ui, shortcut);
-        ui.label(label);
-    });
-}
-
-fn paint_sort_icon(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    descending: bool,
-    color: egui::Color32,
-) {
-    let center = rect.center();
-    let half_w = 3.5;
-    let half_h = 2.5;
-
-    let points = if descending {
-        vec![
-            egui::pos2(center.x - half_w, center.y - half_h),
-            egui::pos2(center.x + half_w, center.y - half_h),
-            egui::pos2(center.x, center.y + half_h),
-        ]
-    } else {
-        vec![
-            egui::pos2(center.x - half_w, center.y + half_h),
-            egui::pos2(center.x + half_w, center.y + half_h),
-            egui::pos2(center.x, center.y - half_h),
-        ]
-    };
-
-    painter.add(egui::Shape::convex_polygon(
-        points,
-        color,
-        egui::Stroke::NONE,
-    ));
-}
-
 fn country_label(country: model::data::country::Country) -> String {
     if let Some(common_name) = country.0.unofficial_names().first() {
-        return normalize_country_name(common_name);
+        return common_name.to_string();
     }
 
-    normalize_country_name(country.0.iso_short_name())
-}
-
-fn normalize_country_name(name: &str) -> String {
-    name.trim()
-        .trim_end_matches(" (the)")
-        .trim_end_matches(", The")
-        .to_owned()
-}
-
-#[derive(Clone, Copy)]
-enum CardIdFilter {
-    Any,
-    Exact(u64),
-    Invalid,
-}
-
-fn parse_card_id_filter(query: &str) -> CardIdFilter {
-    let normalized = normalize_card_id_query(query);
-    if normalized.is_empty() {
-        return CardIdFilter::Any;
-    }
-
-    match normalized.parse::<u64>() {
-        Ok(card_id) => CardIdFilter::Exact(card_id),
-        Err(_) => CardIdFilter::Invalid,
-    }
-}
-
-fn normalize_card_id_query(query: &str) -> String {
-    let normalized = query.trim().to_ascii_lowercase();
-    normalized
-        .strip_prefix("card_")
-        .unwrap_or(&normalized)
-        .to_owned()
-}
-
-fn card_id_matches_filter(card_id: u64, filter: CardIdFilter) -> bool {
-    match filter {
-        CardIdFilter::Any => true,
-        CardIdFilter::Exact(selected) => card_id == selected,
-        CardIdFilter::Invalid => false,
-    }
+    country.0.iso_short_name().to_string()
 }
