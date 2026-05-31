@@ -1,6 +1,13 @@
 use crate::csv_loader::CsvState;
 use crate::transactions_table;
 
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[serde(default)]
+struct PersistedAppState {
+    picked_name: Option<String>,
+    last_loaded_csv_content: Option<String>,
+}
+
 pub struct TemplateApp {
     csv: CsvState,
 }
@@ -15,12 +22,33 @@ impl Default for TemplateApp {
 
 impl TemplateApp {
     /// Called once before the first frame.
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        Default::default()
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let mut app = Self::default();
+
+        if let Some(storage) = cc.storage
+            && let Some(persisted) =
+                eframe::get_value::<PersistedAppState>(storage, eframe::APP_KEY)
+            && let Some(content) = persisted.last_loaded_csv_content
+        {
+            let name = persisted
+                .picked_name
+                .unwrap_or_else(|| "restored.csv".to_owned());
+            app.csv.load_csv_content(name, content);
+        }
+
+        app
     }
 }
 
 impl eframe::App for TemplateApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        let persisted = PersistedAppState {
+            picked_name: self.csv.picked_name.clone(),
+            last_loaded_csv_content: self.csv.last_loaded_csv_content.clone(),
+        };
+        eframe::set_value(storage, eframe::APP_KEY, &persisted);
+    }
+
     /// Called each time the UI needs repainting, which may be many times per second.
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui::Panel::top("top_panel").show_inside(ui, |ui| {
@@ -55,7 +83,25 @@ impl eframe::App for TemplateApp {
             }
 
             if let Some(err) = &self.csv.parse_error {
-                ui.colored_label(egui::Color32::RED, format!("Error: {err}"));
+                let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(180, 40, 40));
+                egui::Frame::new()
+                    .fill(egui::Color32::from_rgb(58, 20, 20))
+                    .stroke(stroke)
+                    .corner_radius(6.0)
+                    .inner_margin(egui::Margin::symmetric(12, 10))
+                    .show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 200, 200),
+                                "CSV Parse Error",
+                            );
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(err)
+                                    .color(egui::Color32::from_rgb(255, 230, 230)),
+                            );
+                        });
+                    });
             }
 
             if let Some(transactions) = &self.csv.transactions {
