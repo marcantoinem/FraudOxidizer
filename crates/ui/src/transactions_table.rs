@@ -614,6 +614,21 @@ fn short_reason(factor: &FraudFactor) -> String {
                 max_gap.num_seconds()
             )
         }
+        FraudFactor::RiskyMerchantCategory { category } => {
+            format!("risky category: {category:?}")
+        }
+        FraudFactor::CategoryPriceDeviation {
+            category,
+            z_score,
+            amount,
+            average_amount,
+            ..
+        } => {
+            format!(
+                "{:?} amount {:.2} vs avg {:.2} ({:.1} sd)",
+                category, amount, average_amount, z_score
+            )
+        }
     }
 }
 

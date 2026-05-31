@@ -1,11 +1,20 @@
 use chrono::{DateTime, Duration, Utc};
 
-use crate::data::{country::Country, transaction::Transaction, transactions::Transactions};
+use crate::data::{
+    country::Country, merchant_category::MerchantCategory, transaction::Transaction,
+    transactions::Transactions,
+};
 
 pub const FRAUD_SCORE_THRESHOLD: f32 = 0.8;
 pub const FOREIGN_COUNTRY_WEIGHT: f32 = 0.9;
 pub const VACATION_FOREIGN_COUNTRY_WEIGHT: f32 = 0.4;
 pub const CARD_TESTING_BURST_WEIGHT: f32 = 0.9;
+pub const RISKY_CATEGORY_WEIGHT: f32 = 0.18;
+pub const CATEGORY_PRICE_DEVIATION_MIN_Z_SCORE: f64 = 3.0;
+pub const CATEGORY_PRICE_DEVIATION_BASE_WEIGHT: f32 = 0.16;
+pub const CATEGORY_PRICE_DEVIATION_STEP_WEIGHT: f32 = 0.12;
+pub const CATEGORY_PRICE_DEVIATION_MAX_WEIGHT: f32 = 0.75;
+pub const HUMAN_REVIEW_SCORE_THRESHOLD_DEFAULT: f32 = 0.55;
 pub const CARD_TESTING_BURST_MAX_AMOUNT: f64 = 15.0;
 pub const CARD_TESTING_BURST_MIN_COUNT: usize = 3;
 pub const CARD_TESTING_BURST_MAX_GAP: Duration = Duration::minutes(10);
@@ -38,6 +47,17 @@ pub enum FraudFactor {
         max_amount: f64,
         max_gap: Duration,
     },
+    RiskyMerchantCategory {
+        category: MerchantCategory,
+    },
+    CategoryPriceDeviation {
+        category: MerchantCategory,
+        amount: f64,
+        average_amount: f64,
+        std_deviation: f64,
+        z_score: f64,
+        weight: f32,
+    },
 }
 
 impl FraudFactor {
@@ -54,6 +74,8 @@ impl FraudFactor {
             }
             Self::CardTestingBurst { .. } => CARD_TESTING_BURST_WEIGHT,
             Self::InactiveCardTestingBurst { .. } => 0.0,
+            Self::RiskyMerchantCategory { .. } => RISKY_CATEGORY_WEIGHT,
+            Self::CategoryPriceDeviation { weight, .. } => *weight,
         }
     }
 
@@ -111,6 +133,22 @@ impl FraudFactor {
                     max_gap.num_seconds()
                 )
             }
+            Self::RiskyMerchantCategory { category } => {
+                format!("merchant category {category:?} is a known higher-risk category")
+            }
+            Self::CategoryPriceDeviation {
+                category,
+                amount,
+                average_amount,
+                std_deviation,
+                z_score,
+                ..
+            } => {
+                format!(
+                    "amount {:.2} is {:.2} standard deviations above the {:?} average {:.2} (std dev {:.2})",
+                    amount, z_score, category, average_amount, std_deviation
+                )
+            }
         }
     }
 }
@@ -137,7 +175,26 @@ impl Transactions {
 
         crate::process::passes::foreign_country_trip::apply(self);
         crate::process::passes::card_testing_burst::apply(self);
+        crate::process::passes::merchant_category_risk::apply(self);
     }
+}
+
+pub fn category_price_deviation_weight(z_score: f64) -> f32 {
+    if z_score < CATEGORY_PRICE_DEVIATION_MIN_Z_SCORE {
+        return 0.0;
+    }
+
+    let weight = CATEGORY_PRICE_DEVIATION_BASE_WEIGHT
+        + ((z_score - CATEGORY_PRICE_DEVIATION_MIN_Z_SCORE) as f32)
+            * CATEGORY_PRICE_DEVIATION_STEP_WEIGHT;
+    weight.min(CATEGORY_PRICE_DEVIATION_MAX_WEIGHT)
+}
+
+pub fn is_risky_category(category: MerchantCategory) -> bool {
+    matches!(
+        category,
+        MerchantCategory::GiftCard | MerchantCategory::Electronics
+    )
 }
 
 #[cfg(test)]
@@ -351,5 +408,28 @@ mod tests {
 
         assert_eq!(transaction.fraud_factors[0].weight(), 0.0);
         assert!(!transaction.likely_fraud());
+    }
+
+    #[test]
+    fn risky_category_weight_stays_small() {
+        let factor = FraudFactor::RiskyMerchantCategory {
+            category: MerchantCategory::GiftCard,
+        };
+
+        assert_eq!(factor.weight(), RISKY_CATEGORY_WEIGHT);
+        assert!(factor.weight() < FRAUD_SCORE_THRESHOLD);
+    }
+
+    #[test]
+    fn category_deviation_weight_increases_with_distance() {
+        let below_cutoff = category_price_deviation_weight(2.5);
+        let low = category_price_deviation_weight(CATEGORY_PRICE_DEVIATION_MIN_Z_SCORE);
+        let higher = category_price_deviation_weight(4.5);
+        let capped = category_price_deviation_weight(20.0);
+
+        assert_eq!(below_cutoff, 0.0);
+        assert!(low > 0.0);
+        assert!(higher > low);
+        assert_eq!(capped, CATEGORY_PRICE_DEVIATION_MAX_WEIGHT);
     }
 }

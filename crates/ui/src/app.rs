@@ -1,10 +1,15 @@
 use crate::csv_loader::CsvState;
 use crate::state::Progression;
 use crate::transactions_table;
+use model::process::card_statistics::HUMAN_REVIEW_SCORE_THRESHOLD_DEFAULT;
 
 use egui::{CentralPanel, Panel};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast as _;
+
+fn default_human_review_score_threshold() -> f32 {
+    HUMAN_REVIEW_SCORE_THRESHOLD_DEFAULT
+}
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -12,11 +17,14 @@ struct PersistedAppState {
     picked_name: Option<String>,
     last_loaded_csv_content: Option<String>,
     current_step: Progression,
+    #[serde(default = "default_human_review_score_threshold")]
+    human_review_score_threshold: f32,
 }
 
 pub struct FraudOxidizerApp {
     csv: CsvState,
     current_step: Progression,
+    human_review_score_threshold: f32,
     review_action_history: Vec<transactions_table::ReviewActionLogEntry>,
 }
 
@@ -25,6 +33,7 @@ impl Default for FraudOxidizerApp {
         Self {
             csv: CsvState::default(),
             current_step: Progression::default(),
+            human_review_score_threshold: HUMAN_REVIEW_SCORE_THRESHOLD_DEFAULT,
             review_action_history: Vec::new(),
         }
     }
@@ -46,6 +55,7 @@ impl FraudOxidizerApp {
             app.csv.load_csv_content(name, content);
             let _ = app.csv.take_loaded_valid_csv_event();
             app.current_step = persisted.current_step;
+            app.human_review_score_threshold = persisted.human_review_score_threshold;
         }
 
         app
@@ -58,6 +68,7 @@ impl eframe::App for FraudOxidizerApp {
             picked_name: self.csv.picked_name.clone(),
             last_loaded_csv_content: self.csv.last_loaded_csv_content.clone(),
             current_step: self.current_step,
+            human_review_score_threshold: self.human_review_score_threshold,
         };
         eframe::set_value(storage, eframe::APP_KEY, &persisted);
     }
@@ -182,6 +193,7 @@ impl FraudOxidizerApp {
                 transactions_table::show_flagged_transactions_review(
                     ui,
                     &mut transactions.items,
+                    &mut self.human_review_score_threshold,
                     &mut self.review_action_history,
                 );
             });

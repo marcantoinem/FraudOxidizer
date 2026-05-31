@@ -1,6 +1,6 @@
 use model::data::human_review_status::HumanReviewStatus;
 use model::data::transaction::Transaction;
-use model::process::card_statistics::FraudFactor;
+use model::process::card_statistics::{FraudFactor, HUMAN_REVIEW_SCORE_THRESHOLD_DEFAULT};
 
 use crate::transactions_table::ReviewActionLogEntry;
 use crate::transactions_table::country_label;
@@ -12,18 +12,54 @@ use super::review_plots::{burst_histogram_slot, burst_timeline_slot, foreign_tri
 pub(crate) fn show_flagged_transactions_review(
     ui: &mut egui::Ui,
     rows: &mut [Transaction],
+    review_threshold: &mut f32,
     history: &mut Vec<ReviewActionLogEntry>,
 ) {
+    let max_score = rows
+        .iter()
+        .map(Transaction::fraud_score)
+        .fold(HUMAN_REVIEW_SCORE_THRESHOLD_DEFAULT, f32::max)
+        .max(1.0);
+    *review_threshold = review_threshold.clamp(0.0, max_score);
+
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Human review threshold");
+        ui.add(
+            egui::Slider::new(review_threshold, 0.0..=max_score)
+                .step_by(0.01)
+                .show_value(true),
+        );
+    });
+    ui.add_space(8.0);
+
     let flagged_indices: Vec<usize> = rows
         .iter()
         .enumerate()
-        .filter_map(|(index, row)| (!row.fraud_factors.is_empty()).then_some(index))
+        .filter_map(|(index, row)| (row.fraud_score() >= *review_threshold).then_some(index))
         .collect();
 
     if flagged_indices.is_empty() {
-        ui.label("No transactions were flagged by the detector.");
+        let hidden_count = rows
+            .iter()
+            .filter(|row| !row.fraud_factors.is_empty() && row.fraud_score() < *review_threshold)
+            .count();
+        if hidden_count > 0 {
+            ui.label(format!(
+                "No transactions currently meet the review threshold {:.2}. Lower it to include {} lower-score transactions.",
+                *review_threshold, hidden_count
+            ));
+        } else {
+            ui.label("No transactions were flagged by the detector.");
+        }
         return;
     }
+
+    ui.label(format!(
+        "{} transactions currently require human review at threshold {:.2}.",
+        flagged_indices.len(),
+        *review_threshold
+    ));
+    ui.add_space(8.0);
 
     let cursor_id = ui.make_persistent_id("flagged_review_carousel_cursor");
     let undo_stack_id = ui.make_persistent_id("flagged_review_undo_stack");
